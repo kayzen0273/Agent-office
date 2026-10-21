@@ -303,6 +303,7 @@ const MSEAT={boss:[5.3,13.1],bolt:[3.8,13.1],claude:[3.8,16.5],nova:[6.8,16.5]};
 const MT=['Sprint planning','Review desain','Retrospektif','Demo fitur','Sinkronisasi harian'];
 const MLN=['Prioritaskan fitur login dulu.','Estimasinya dua hari.','Ada risiko di API pembayaran.','Desainnya siap ditinjau.','Setuju, kita lanjut.','Tes regresi masih berjalan.','Ada pertanyaan?'];
 function meetPlan(b){
+  if(LIVE())return null;
   const r=mb(hs('meet:'+b));
   if(r()<.15)return null;
   const t0=160+r()*140,t1=t0+130+r()*70,topic=pickR(MT,r);
@@ -310,6 +311,7 @@ function meetPlan(b){
   return ids.length<2?null:{t0,t1,topic,ids};
 }
 const byId=id=>AG.find(a=>a.id===id);
+function LIVE(){try{return !!GM.key;}catch(e){return false;}}
 
 const DESKS=[
  {x:2,y:2.2,w:2.6,d:1.3,mons:3},
@@ -359,6 +361,11 @@ function tasksBetween(t0,t1){
 }
 let tasks=[];
 function refreshTasks(now){
+  if(LIVE()){
+    tasks=utasks.filter(u=>u.st!==undefined&&(u.st<2||now-(u.dt||u.t)<600000))
+      .sort((p,q)=>p.t-q.t).map(u=>({id:'u'+u.t,text:u.text,col:u.st,owner:u.st>=1?u.ow:null}));
+    return;
+  }
   tasks=tasksBetween(now-600000,now)
     .filter(k=>k.created<=now&&k.doneAt>=now-600000)
     .sort((p,q)=>p.created-q.created)
@@ -1852,7 +1859,7 @@ function mkWalk(from,to,t0){
 }
 function mkM(pts,t0,dest){const cum=[0];for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]));return {k:'walk',room:'meet',t0,t1:t0+cum[cum.length-1]/SPEED,pts,cum,dest};}
 function sched(a,b){
-  const key=a.id+':'+b;
+  const key=a.id+':'+b+(LIVE()?'L':'');
   if(schedCache[key])return schedCache[key];
   if(Object.keys(schedCache).length>240)schedCache={};
   const r=mb(hs(key)),seat='s'+a.desk,segs=[];let t=0;
@@ -1879,10 +1886,49 @@ function sched(a,b){
   }else fill(BL,10+r()*70);
   schedCache[key]=segs;return segs;
 }
+function nearestNode(x,y){let best='top',bd=1e9;for(const k in NODES){const p=NODES[k],d=Math.hypot(p[0]-x,p[1]-y);if(d<bd){bd=d;best=k;}}return best;}
+function liveWalk(a,to,now){
+  const from=nearestNode(a.x,a.y),names=route(from,to),pts=[[a.x,a.y],NODES[from]].concat(names.map(n=>NODES[n])),cum=[0];
+  for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]));
+  return {t0:now,t1:now+cum[cum.length-1]/SPEED*1000,pts,cum};
+}
+function walkPos(w,now,a){
+  const total=w.cum[w.cum.length-1],d=Math.max(0,Math.min(total,(now-w.t0)/1000*SPEED));
+  let i=1;while(i<w.cum.length-1&&w.cum[i]<d)i++;
+  const p0=w.pts[i-1],p1=w.pts[i],L=(w.cum[i]-w.cum[i-1])||1,f=Math.max(0,Math.min(1,(d-w.cum[i-1])/L));
+  a.x=p0[0]+(p1[0]-p0[0])*f;a.y=p0[1]+(p1[1]-p0[1])*f;
+}
+/* mode terhubung: agen standby (santai berkeliling), baru duduk bekerja saat diberi perintah */
+function applyLive(a,now){
+  const L=a._lv||(a._lv={m:'idle',until:now+1500,node:null});
+  const busy=a.busy>0,seat='s'+a.desk;
+  if(busy&&L.m!=='toDesk'&&L.m!=='desk'){L.m='toDesk';L.w=liveWalk(a,seat,now);}
+  else if(!busy&&(L.m==='toDesk'||L.m==='desk')){L.m='idle';L.until=now+3000;L.node=null;}
+  if(L.m==='toDesk'){
+    walkPos(L.w,now,a);a.state='walk';a.dest='out';a.act='Menuju meja';
+    if(now>=L.w.t1)L.m='desk';
+  }else if(L.m==='desk'){
+    const p=SEATS[a.desk];a.x=p[0];a.y=p[1];a.state='work';a.dest=null;a.act=a.work[Math.floor(now/9000)%a.work.length];
+  }else if(L.m==='walk'){
+    walkPos(L.w,now,a);a.state='walk';a.dest=L.tg;
+    if(now>=L.w.t1){L.m='idle';L.until=now+(7+Math.random()*9)*1000;const p=NODES[L.tg];a.x=p[0];a.y=p[1];L.node=(L.tg===seat)?null:L.tg;}
+  }else{
+    if(L.node){const p=NODES[L.node];a.x=p[0];a.y=p[1];}
+    a.state='idle';a.dest=L.node;a.act=SPOT[L.node]||'Siap menunggu perintah';
+    if(now>=L.until){
+      const r=Math.random(),nx=r<.3?'cooler':r<.55?'printer':r<.8?'board':seat;
+      if(nx===L.node||(!L.node&&nx===seat)){L.until=now+(5+Math.random()*6)*1000;}
+      else{L.tg=nx;L.m='walk';L.w=liveWalk(a,nx,now);a.state='walk';}
+    }
+  }
+  a.loc=a.y>10.05?'meet':'work';
+  a.auto=(a.state==='idle')?{text:a.act}:null;
+}
 function applySched(a,nowMs){
   const ps=prayerAt(nowMs);
   if(ps){applyPray(a,ps,(nowMs-ps.t0)/1000);return;}
   a.pose=null;a.garb=null;a.back=false;a.wud=-1;a.pr=false;
+  if(!a.human&&LIVE()){applyLive(a,nowMs);return;}
   const s=nowMs/1000,b=Math.floor(s/BL),off=s-b*BL,segs=sched(a,b);
   let g=segs[segs.length-1];
   for(const x of segs){if(off<x.t1){g=x;break;}}
@@ -2295,8 +2341,10 @@ async function gModels(){
 }
 
 /* menjalankan perintah lewat agen */
-async function gemRun(a,prompt,task){
- lastAg=a;
+async function gemRun(a,prompt,task,ut){
+ lastAg=a;a.busy=(a.busy||0)+1;
+ const tkSet=(st,ow)=>{if(!ut)return;ut.st=st;ut.ow=ow;if(st===2)ut.dt=Date.now();save();refreshTasks(Date.now());};
+ tkSet(1,a.id);
  const t0=Date.now(),r=addMsg(a,'Sedang berpikir…','',t0,false);
  r.tx.classList.add('ai','wait');
  const acts=document.createElement('div');acts.className='acts';r.body.append(acts);
@@ -2318,20 +2366,22 @@ async function gemRun(a,prompt,task){
   results.push(rec);rSave();gCount();
   const flat=text.replace(/\s+/g,' ');
   log.push({t:Date.now(),id:a.id,text:flat.slice(0,220)+(flat.length>220?'… (selengkapnya di tombol HASIL)':''),sys:''});save();
-  finishRow(r,acts,rec);
+  finishRow(r,acts,rec);tkSet(2,a.id);
   a.bubble={text:'Selesai, cek hasilnya',ttl:4};beep();
  }catch(e){
   if(raf)cancelAnimationFrame(raf);
+  tkSet(0,null);
   acts.replaceChildren();
   r.tx.className='tx hint';
   if(e&&e.name==='AbortError'){r.tx.textContent=cur?cur+'\n\n(dihentikan)':'Dihentikan.';}
   else{
    const msg=(e&&e.message)||'Terjadi kesalahan.';
    r.tx.textContent=msg+(/API key|Akses ditolak|diblokir/.test(msg)?'':'\n\n(Sudah dicoba otomatis beberapa menit. Tekan Coba lagi bila internet sudah stabil.)');
-   acts.append(mini('Coba lagi',()=>{acts.remove();gemRun(a,prompt,task);}));
+   acts.append(mini('Coba lagi',()=>{acts.remove();gemRun(a,prompt,task,ut);}));
    if(/API key|Akses ditolak|Model "/.test(msg))acts.append(mini('Buka pengaturan',openSet));
   }
  }finally{
+  a.busy=Math.max(0,(a.busy||1)-1);
   clearInterval(bt);
   if(a.bubble&&/^(Berpikir|Menulis|Mencoba)/.test(a.bubble.text))a.bubble=null;
  }
@@ -2389,7 +2439,8 @@ $('#lclear').addEventListener('click',()=>{results=[];rSave();gCount();openList(
 
 function gUI(){
  $('#gdot').classList.toggle('on',!!GM.key);
- $('#gline').textContent=GM.key?('Gemini aktif · '+GM.model):'Belum terhubung · jawaban masih simulasi';
+ schedCache={};refreshTasks(Date.now());
+ $('#gline').textContent=GM.key?('Gemini aktif · '+GM.model+' · agen standby, bekerja saat diberi perintah'):'Belum terhubung · jawaban masih simulasi';
 }
 function stat(t,c){const e=$('#gstat');e.textContent=t;e.className='stat'+(c?' '+c:'');}
 function setModels(list){
@@ -2473,10 +2524,10 @@ $('#form').addEventListener('submit',e=>{
   if(/^\/status$/i.test(txt)){const c=counts();addMsg(boss,`TODO ${c[0]} · DOING ${c[1]} · DONE ${c[2]}`,'sys');return;}
   const m=txt.match(/^\/tugas\s+(.+)/i);
   if(m){
-    utasks.push({t:Date.now(),text:m[1].slice(0,40)});save();refreshTasks(Date.now());
+    utasks.push({t:Date.now(),text:m[1].slice(0,40),st:LIVE()?0:undefined});save();refreshTasks(Date.now());
     addMsg(boss,`Tugas baru masuk TODO: ${m[1].slice(0,40)}`,'sys',Date.now(),true);
-    if(ai){const ut=utasks[utasks.length-1],who=byId(userTask(ut).owner)||pick(AIS);
-      if(GM.key)gemRun(who,m[1],true);
+    if(ai){const ut=utasks[utasks.length-1],who=LIVE()?pickAgent(m[1]):(byId(userTask(ut).owner)||pick(AIS));
+      if(GM.key)gemRun(who,m[1],true,ut);
       else{who.bubble={text:'…',ttl:1.2};setTimeout(()=>speak(who,'Siap, saya ambil begitu ada waktu.',Date.now(),true),900);}}
     return;
   }
@@ -2555,7 +2606,7 @@ setInterval(()=>{
   const now=Date.now();
   refreshTasks(now);
   AG.forEach(a=>{const c=clockInTime(a);if(c>lastT&&c<=now)addMsg(a,'clocked in','sys',c);});
-  if(ai){
+  if(ai&&!LIVE()){
     let evs=eventsBetween(lastT,now);
     if(evs.length>15)evs=evs.slice(-15);
     evs.forEach(e=>e.sys?addMsg(e.who,e.text,'sys',e.t):speak(e.who,e.text,e.t,false));
