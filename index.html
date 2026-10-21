@@ -2189,7 +2189,7 @@ async function gStream1(a,prompt,task,signal,onText,model){
  catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error(NETERR+(e&&e.message?' ('+e.message+')':''));er.net=1;throw er;}
  if(!res.ok){const er=new Error(await gErr(res));er.code=res.status;throw er;}
  const rd=res.body.getReader(),dec=new TextDecoder();
- let buf='',full='',finish='',block='';
+ let buf='',full='',finish='',block='',broke=false;
  const feed=ev=>{
   ev.split(/\r?\n/).forEach(line=>{
    if(!line.startsWith('data:'))return;
@@ -2210,9 +2210,10 @@ async function gStream1(a,prompt,task,signal,onText,model){
    while((i=buf.search(/\r?\n\r?\n/))>=0){const ev=buf.slice(0,i);buf=buf.slice(i).replace(/^\r?\n\r?\n/,'');feed(ev);}
   }
   if(buf.trim())feed(buf);
- }catch(e){if(e&&e.name==='AbortError')throw e;if(!full){const er=new Error(NETERR);er.net=1;throw er;}}
+ }catch(e){if(e&&e.name==='AbortError')throw e;broke=true;}
+ if(broke&&(!finish||!full)){const er=new Error(NETERR);er.net=1;throw er;}
  if(!full){
-  if(block)throw new Error('Permintaan diblokir filter keamanan Google ('+block+'). Coba ubah kata-katanya.');
+  if(block){const er=new Error('Permintaan diblokir filter keamanan Google ('+block+'). Coba ubah kata-katanya.');er.code=-2;throw er;}
   // stream kosong: coba sekali lagi tanpa streaming
   const r2=await gOnce(a,prompt,task,signal,model);
   if(r2.text){onText(r2.text);return r2;}
@@ -2233,26 +2234,44 @@ async function gOnce(a,prompt,task,signal,model){
 }
 const GFALL=['gemini-flash-latest','gemini-2.5-flash','gemini-flash-lite-latest','gemini-2.5-flash-lite'];
 const sleep=(ms,sig)=>new Promise((ok,no)=>{const t=setTimeout(ok,ms);if(sig)sig.addEventListener('abort',()=>{clearTimeout(t);no(new DOMException('Aborted','AbortError'));},{once:true});});
-async function gStream(a,prompt,task,signal,onText){
- const models=[...new Set([GM.model,...GFALL])];
- let lastErr=null;
- for(let mi=0;mi<models.length;mi++){
-  const model=models[mi];
-  for(let at=0;at<3;at++){
+async function gStream(a,prompt,task,signal,onText,onStatus){
+ const note=m=>{try{onStatus&&onStatus(m);}catch(e){}};
+ const DELAYS=[2,4,8,15,20,30,30,45,60,60];   // detik; total sekitar 4 menit sebelum menyerah
+ let lastErr=null,clearedHist=false;
+ for(let round=0;round<=DELAYS.length;round++){
+  const models=[...new Set([GM.model,...GFALL])];
+  let allFatal=true;
+  for(let mi=0;mi<models.length;mi++){
+   const model=models[mi];
    try{
+    if(round>0||mi>0)note('Menghubungi Gemini ('+model+')…'+(round?' percobaan '+(round+1):''));
     const r=await gStream1(a,prompt,task,signal,onText,model);
-    if(model!==GM.model)r.text='_(Model '+GM.model+' bermasalah, otomatis memakai '+model+'.)_\n\n'+r.text;
+    if(model!==GM.model)r.text='_(Model '+GM.model+' sedang bermasalah, otomatis memakai '+model+'.)_\n\n'+r.text;
     return r;
    }catch(e){
     if(e&&e.name==='AbortError')throw e;
-    lastErr=e;
-    const c=e.code;
-    if(c===400||c===401||c===403)throw e;           // kunci/permintaan salah: jangan diulang
-    if(c===404||c===-1)break;                         // model tidak ada/kosong: ganti model
-    if(c===429&&/quota|billing|limit: 0/i.test(e.message||''))break;
-    if(at<2){await sleep(1500*(at+1),signal);continue;} // 429/5xx/jaringan: ulang dengan jeda
-    break;
+    lastErr=e;const c=e.code;
+    if(c===401||c===403)throw e;                                   // kunci salah / akses ditolak
+    if(c===400){
+     if(/API key/i.test(e.message))throw e;
+     if(!clearedHist&&(hist[a.id]||[]).length){clearedHist=true;hist[a.id]=[];mi--;continue;} // riwayat bermasalah: buang lalu ulang
+     throw e;
+    }
+    if(c===-2)throw e;                                             // diblokir filter keamanan
+    allFatal=false;                                                // 404, 429, 5xx, jaringan, kosong: coba model berikutnya
    }
+  }
+  if(allFatal)break;
+  if(round>=DELAYS.length)break;
+  let w=DELAYS[round];
+  const why=(lastErr&&lastErr.code===429)?'Kuota/limit sedang penuh':(lastErr&&lastErr.net)?'Koneksi ke Google terganggu':'Server Gemini sibuk';
+  while(w>0){
+   note(why+'. Mencoba lagi otomatis dalam '+w+' detik… (percobaan '+(round+2)+')');
+   await sleep(1000,signal);w--;
+  }
+  if(navigator.onLine===false){
+   note('Perangkat offline. Menunggu koneksi internet kembali…');
+   await new Promise((ok,no)=>{const f=()=>{removeEventListener('online',f);ok();};addEventListener('online',f);signal&&signal.addEventListener('abort',()=>{removeEventListener('online',f);no(new DOMException('Aborted','AbortError'));},{once:true});});
   }
  }
  throw lastErr||new Error('Gagal menghubungi Gemini.');
@@ -2284,11 +2303,11 @@ async function gemRun(a,prompt,task){
  const ac=new AbortController();
  acts.append(mini('Hentikan',()=>ac.abort()));
  let streaming=false,cur='',raf=0;
- const keep=()=>{a.bubble={text:streaming?'Menulis…':'Berpikir…',ttl:1.4};};
+ const keep=()=>{if(a.bubble&&/^Mencoba/.test(a.bubble.text))return;a.bubble={text:streaming?'Menulis…':'Berpikir…',ttl:1.4};};
  keep();const bt=setInterval(keep,700);
  const paint=()=>{raf=0;const near=msgs.scrollHeight-msgs.scrollTop-msgs.clientHeight<90;r.tx.classList.remove('wait');r.tx.replaceChildren(mdRender(cur));if(near)msgs.scrollTop=msgs.scrollHeight;};
  try{
-  const out=await gStream(a,prompt,task,ac.signal,t=>{streaming=true;cur=t;if(!raf)raf=requestAnimationFrame(paint);});
+  const out=await gStream(a,prompt,task,ac.signal,t=>{streaming=true;cur=t;if(!raf)raf=requestAnimationFrame(paint);},m=>{if(!cur){r.tx.classList.add('wait');r.tx.textContent=m;}a.bubble={text:'Mencoba lagi…',ttl:1.4};});
   if(raf)cancelAnimationFrame(raf);
   let text=out.text;
   if(out.finish==='MAX_TOKENS')text+='\n\n_(Jawaban terpotong karena mencapai batas panjang. Minta agen melanjutkan.)_';
@@ -2308,13 +2327,13 @@ async function gemRun(a,prompt,task){
   if(e&&e.name==='AbortError'){r.tx.textContent=cur?cur+'\n\n(dihentikan)':'Dihentikan.';}
   else{
    const msg=(e&&e.message)||'Terjadi kesalahan.';
-   r.tx.textContent=msg;
+   r.tx.textContent=msg+(/API key|Akses ditolak|diblokir/.test(msg)?'':'\n\n(Sudah dicoba otomatis beberapa menit. Tekan Coba lagi bila internet sudah stabil.)');
    acts.append(mini('Coba lagi',()=>{acts.remove();gemRun(a,prompt,task);}));
    if(/API key|Akses ditolak|Model "/.test(msg))acts.append(mini('Buka pengaturan',openSet));
   }
  }finally{
   clearInterval(bt);
-  if(a.bubble&&/^(Berpikir|Menulis)/.test(a.bubble.text))a.bubble=null;
+  if(a.bubble&&/^(Berpikir|Menulis|Mencoba)/.test(a.bubble.text))a.bubble=null;
  }
 }
 function finishRow(r,acts,rec){
