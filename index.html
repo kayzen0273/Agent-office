@@ -2070,7 +2070,7 @@ function tryAdhanPending(){
 /* ---------- Gemini (Google AI Studio) ---------- */
 const GSK='agentOffice.gemini.v1',RSK='agentOffice.results.v1',GAPI='https://generativelanguage.googleapis.com/v1beta/';
 const GM={key:'',model:'gemini-flash-latest'};
-try{const g=JSON.parse(localStorage.getItem(GSK)||'{}');GM.key=g.key||'';GM.model=g.model||GM.model;}catch(e){}
+try{const g=JSON.parse(localStorage.getItem(GSK)||'{}');GM.key=String(g.key||'').replace(/[^\x21-\x7E]/g,'');GM.model=g.model||GM.model;}catch(e){}
 function gSave(){try{localStorage.setItem(GSK,JSON.stringify({key:GM.key,model:GM.model}));}catch(e){}}
 let results=[];try{results=JSON.parse(localStorage.getItem(RSK)||'[]');if(!Array.isArray(results))results=[];}catch(e){results=[];}
 function rSave(){try{localStorage.setItem(RSK,JSON.stringify(results.slice(-30)));}catch(e){try{results=results.slice(-8);localStorage.setItem(RSK,JSON.stringify(results));}catch(_){}}}
@@ -2166,6 +2166,9 @@ function htmlOf(t){const m=t.match(/```html[^\n]*\n([\s\S]*?)```/i)||t.match(/``
 
 /* panggilan API */
 async function gErr(res){
+ const _m=await gErr0(res);return _m;
+}
+async function gErr0(res){
  let m='';try{const j=await res.json();m=(j.error&&j.error.message)||'';}catch(e){}
  const c=res.status;
  if(c===400&&/API key/i.test(m))return 'API key tidak valid. Periksa lagi kuncinya lewat tombol GEMINI.';
@@ -2173,17 +2176,18 @@ async function gErr(res){
  if(c===401||c===403)return 'Akses ditolak ('+c+'). Pastikan API key benar dan Generative Language API aktif untuk proyek itu. '+m.slice(0,140);
  if(c===404)return 'Model "'+GM.model+'" tidak ditemukan. Ganti model lewat tombol GEMINI (coba gemini-flash-latest).';
  if(c===429)return 'Kuota atau limit Gemini habis (429). Tunggu sebentar, atau cek kuota di Google AI Studio.';
+ if(c===503)return 'Model Gemini sedang overload (503). Sudah dicoba ulang otomatis; coba lagi sebentar atau ganti model.';
  if(c>=500)return 'Server Gemini sedang bermasalah ('+c+'). Coba lagi sebentar.';
  return 'Error '+c+': '+m.slice(0,200);
 }
 const NETERR='Tidak bisa menghubungi Google. Periksa koneksi internet, VPN, atau ekstensi pemblokir.';
-async function gStream(a,prompt,task,signal,onText){
+async function gStream1(a,prompt,task,signal,onText,model){
  const h=hist[a.id]=hist[a.id]||[];
  const body={systemInstruction:{parts:[{text:sysPrompt(a,task)}]},contents:h.concat([{role:'user',parts:[{text:prompt}]}]),generationConfig:{temperature:task?.7:.9,maxOutputTokens:task?16384:8192}};
  let res;
- try{res=await fetch(GAPI+'models/'+encodeURIComponent(GM.model)+':streamGenerateContent?alt=sse',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify(body)});}
- catch(e){if(e&&e.name==='AbortError')throw e;throw new Error(NETERR);}
- if(!res.ok)throw new Error(await gErr(res));
+ try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':streamGenerateContent?alt=sse',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify(body)});}
+ catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error(NETERR+(e&&e.message?' ('+e.message+')':''));er.net=1;throw er;}
+ if(!res.ok){const er=new Error(await gErr(res));er.code=res.status;throw er;}
  const rd=res.body.getReader(),dec=new TextDecoder();
  let buf='',full='',finish='',block='';
  const feed=ev=>{
@@ -2206,18 +2210,58 @@ async function gStream(a,prompt,task,signal,onText){
    while((i=buf.search(/\r?\n\r?\n/))>=0){const ev=buf.slice(0,i);buf=buf.slice(i).replace(/^\r?\n\r?\n/,'');feed(ev);}
   }
   if(buf.trim())feed(buf);
- }catch(e){if(e&&e.name==='AbortError')throw e;if(!full)throw new Error(NETERR);}
+ }catch(e){if(e&&e.name==='AbortError')throw e;if(!full){const er=new Error(NETERR);er.net=1;throw er;}}
  if(!full){
   if(block)throw new Error('Permintaan diblokir filter keamanan Google ('+block+'). Coba ubah kata-katanya.');
-  throw new Error('Gemini tidak mengembalikan jawaban'+(finish?' ('+finish+')':'')+'. Coba lagi atau ganti model.');
+  // stream kosong: coba sekali lagi tanpa streaming
+  const r2=await gOnce(a,prompt,task,signal,model);
+  if(r2.text){onText(r2.text);return r2;}
+  const er=new Error('Gemini tidak mengembalikan jawaban'+(finish||r2.finish?' ('+(r2.finish||finish)+')':'')+'. Coba lagi atau ganti model.');er.code=-1;throw er;
  }
  return {text:full,finish};
+}
+async function gOnce(a,prompt,task,signal,model){
+ const h=hist[a.id]=hist[a.id]||[];
+ const body={systemInstruction:{parts:[{text:sysPrompt(a,task)}]},contents:h.concat([{role:'user',parts:[{text:prompt}]}]),generationConfig:{temperature:task?.7:.9,maxOutputTokens:task?16384:8192}};
+ let res;
+ try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify(body)});}
+ catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error(NETERR);er.net=1;throw er;}
+ if(!res.ok){const er=new Error(await gErr(res));er.code=res.status;throw er;}
+ const j=await res.json(),c=j.candidates&&j.candidates[0];
+ let t='';if(c&&c.content&&c.content.parts)c.content.parts.forEach(p=>{if(p.text&&!p.thought)t+=p.text;});
+ return {text:t,finish:(c&&c.finishReason)||''};
+}
+const GFALL=['gemini-flash-latest','gemini-2.5-flash','gemini-flash-lite-latest','gemini-2.5-flash-lite'];
+const sleep=(ms,sig)=>new Promise((ok,no)=>{const t=setTimeout(ok,ms);if(sig)sig.addEventListener('abort',()=>{clearTimeout(t);no(new DOMException('Aborted','AbortError'));},{once:true});});
+async function gStream(a,prompt,task,signal,onText){
+ const models=[...new Set([GM.model,...GFALL])];
+ let lastErr=null;
+ for(let mi=0;mi<models.length;mi++){
+  const model=models[mi];
+  for(let at=0;at<3;at++){
+   try{
+    const r=await gStream1(a,prompt,task,signal,onText,model);
+    if(model!==GM.model)r.text='_(Model '+GM.model+' bermasalah, otomatis memakai '+model+'.)_\n\n'+r.text;
+    return r;
+   }catch(e){
+    if(e&&e.name==='AbortError')throw e;
+    lastErr=e;
+    const c=e.code;
+    if(c===400||c===401||c===403)throw e;           // kunci/permintaan salah: jangan diulang
+    if(c===404||c===-1)break;                         // model tidak ada/kosong: ganti model
+    if(c===429&&/quota|billing|limit: 0/i.test(e.message||''))break;
+    if(at<2){await sleep(1500*(at+1),signal);continue;} // 429/5xx/jaringan: ulang dengan jeda
+    break;
+   }
+  }
+ }
+ throw lastErr||new Error('Gagal menghubungi Gemini.');
 }
 async function gModels(){
  const out=[];let tok='';
  for(let k=0;k<3;k++){
   let res;
-  try{res=await fetch(GAPI+'models?pageSize=200'+(tok?'&pageToken='+encodeURIComponent(tok):''),{headers:{'x-goog-api-key':GM.key}});}catch(e){throw new Error(NETERR);}
+  try{res=await fetch(GAPI+'models?pageSize=200'+(tok?'&pageToken='+encodeURIComponent(tok):''),{headers:{'x-goog-api-key':GM.key}});}catch(e){throw new Error(NETERR+(e&&e.message?' ('+e.message+')':''));}
   if(!res.ok)throw new Error(await gErr(res));
   const j=await res.json();
   (j.models||[]).forEach(m=>{
@@ -2333,7 +2377,7 @@ function setModels(list){
  const dl=$('#gmodels');dl.replaceChildren();
  [...new Set(['gemini-flash-latest','gemini-pro-latest',...list])].forEach(n=>{const o=document.createElement('option');o.value=n;dl.append(o);});
 }
-setModels(['gemini-3.8-flash','gemini-3.6-flash']);
+setModels(['gemini-2.5-flash','gemini-2.5-pro','gemini-flash-lite-latest']);
 function openSet(){
  $('#gkey').value=GM.key;$('#gkey').type='password';$('#gshow').textContent='Lihat';
  $('#gmodel').value=GM.model;stat(GM.key?'Kunci tersimpan di browser ini.':'','');
@@ -2342,7 +2386,7 @@ function openSet(){
 $('#gbtn').addEventListener('click',openSet);
 $('#gshow').addEventListener('click',()=>{const k=$('#gkey'),sh=k.type==='password';k.type=sh?'text':'password';$('#gshow').textContent=sh?'Sembunyi':'Lihat';});
 $('#gsave').addEventListener('click',async()=>{
- const k=$('#gkey').value.trim(),md=$('#gmodel').value.trim()||'gemini-flash-latest';
+ const k=$('#gkey').value.replace(/[^\x21-\x7E]/g,''),md=$('#gmodel').value.trim()||'gemini-flash-latest';
  if(!k){stat('Masukkan API key dulu.','err');return;}
  GM.key=k;GM.model=md;gSave();gUI();stat('Menguji koneksi…','');
  try{
@@ -2351,7 +2395,7 @@ $('#gsave').addEventListener('click',async()=>{
   else stat('Terhubung, tetapi model "'+md+'" tidak ada di akun Anda. Pilih salah satu dari '+ms.length+' model di kolom Model.','warn');
  }catch(e){
   stat(e.message,'err');
-  if(/API key|Akses ditolak/.test(e.message)){GM.key='';gSave();gUI();}
+  if(/API key tidak valid/.test(e.message)){GM.key='';gSave();gUI();}
  }
 });
 $('#gclear').addEventListener('click',()=>{GM.key='';gSave();gUI();$('#gkey').value='';hist={};stat('Kunci dihapus dari browser ini.','');});
