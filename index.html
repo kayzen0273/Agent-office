@@ -176,6 +176,8 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
 .gimgs{display:grid;gap:8px;margin-top:8px}
 .gimg{display:block;width:100%;height:auto;border-radius:8px;border:1px solid var(--line);background:#0b0d14;cursor:zoom-in}
 #rbody .gimgs{margin:0 0 12px}
+.gcar{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:8px;padding-bottom:6px}
+.gcar .gimg{flex:0 0 86%;width:86%;scroll-snap-align:start}
 .frame{display:block;width:100%;height:62vh;border:1px solid var(--line);border-radius:8px;background:#fff}
 .it{display:block;width:100%;text-align:left;background:#10121a;border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin:0 0 8px;color:inherit;font:inherit;cursor:pointer}
 .it:hover{border-color:#343947;background:#151826}
@@ -2332,7 +2334,7 @@ async function proposeTask(who,full,ut){
   const title=ut.text;let alt=null,body;
   if(GM.key){
     who.bubble={text:'Menyusun usulan…',ttl:2};
-    const out=await gemRun(who,'CEO memberi tugas: "'+full+'". JANGAN kerjakan dulu, tunggu persetujuan CEO. Balas maksimal 3 kalimat berisi rencana singkat pengerjaan. Jika ada cara yang lebih berguna daripada permintaan persis itu, tulis satu baris terpisah diawali "USULAN:" berisi alternatifnya. Jika permintaan sudah paling tepat, jangan tulis USULAN.',false);
+    const out=await gemRun(who,'CEO memberi tugas: "'+full+'". JANGAN kerjakan dulu, tunggu persetujuan CEO. Balas maksimal 3 kalimat berisi rencana singkat pengerjaan. Jika ada cara yang lebih berguna daripada permintaan persis itu, tulis satu baris terpisah diawali "USULAN:" berisi alternatifnya. Jika permintaan sudah paling tepat, jangan tulis USULAN.',false,null,undefined,{noRec:true});
     const mm=out&&out.match(/USULAN:\s*(.+)/i);if(mm)alt=mm[1].trim();
     body=(alt?'Usulan di atas lebih berguna menurut saya.':'')+'\nDikerjakan bersama tim: '+teamNames(teamOf(who))+'.\nMenunggu keputusan CEO.';
   }else{
@@ -2349,7 +2351,7 @@ async function proposeTask(who,full,ut){
     ut.ap='ok';ut.at=Date.now();save();refreshTasks(Date.now());
     acts.textContent=label;
     addMsg(boss,'Disetujui: '+title+(prompt!==full?' (sesuai usulan)':''),'sys',Date.now(),true);
-    if(GM.key&&!isImgReq(full))teamRun(who,full,ut,prompt!==full?alt:null);else if(GM.key)gemRun(who,prompt,true,ut,'img');else if(isImgReq(full))speak(who,'Saya butuh Gemini untuk membuat gambarnya. Hubungkan GEMINI dulu ya.',Date.now(),true);else speak(who,'Siap, mulai dikerjakan bersama tim.',Date.now(),true);
+    if(GM.key&&!isImgReq(full))teamRun(who,full,ut,prompt!==full?alt:null);else if(GM.key){if(isCarouselReq(full))carouselRun(who,prompt,ut);else gemRun(who,prompt,true,ut,'img');}else if(isImgReq(full))speak(who,'Saya butuh Gemini untuk membuat gambarnya. Hubungkan GEMINI dulu ya.',Date.now(),true);else speak(who,'Siap, mulai dikerjakan bersama tim.',Date.now(),true);
   };
   const no=()=>{
     if(ut.ap!=='pending')return;
@@ -2365,7 +2367,7 @@ async function proposeTask(who,full,ut){
 function pickAgent(txt){
  const m=AIS.find(a=>new RegExp('@'+a.name,'i').test(txt));if(m)return m;
  const s=txt.toLowerCase();
- if(/gambar|foto|ilustrasi|poster|maskot|desain|warna|tampilan|\bui\b|\bux\b|layout|logo|landing|css|figma|mockup/.test(s))return byId('nova');
+ if(/gambar|foto|ilustrasi|poster|maskot|carousel|karusel|postingan|banner|desain|warna|tampilan|\bui\b|\bux\b|layout|logo|landing|css|figma|mockup/.test(s))return byId('nova');
  if(/\btes\b|test|\bqa\b|\bbug\b|\buji\b|regresi|skenario/.test(s))return byId('bolt');
  return lastAg||byId('claude');
 }
@@ -2441,9 +2443,12 @@ function mdRender(src){
 }
 /* ---------- gambar: dibuat lewat model gambar Gemini ---------- */
 const IMGM=['gemini-2.5-flash-image','gemini-2.0-flash-preview-image-generation'];
-function isImgReq(t){return /^\s*gambar(kan)?\s/i.test(t)||/\b(buat|bikin|buatkan|bikinkan|generate|hasilkan|lukis|lukiskan|gambarkan|desain|desainkan|cetak)\w*\b[^\n]{0,40}\b(gambar|foto|ilustrasi|poster|logo|maskot|wallpaper|ikon|sketsa|lukisan|banner|sampul)\b/i.test(t);}
+function isCarouselReq(t){return /\b(carousel|karusel)\b/i.test(t);}
+function isImgReq(t){return isCarouselReq(t)||/^\s*gambar(kan)?\s/i.test(t)||/\b(buat|bikin|buatkan|bikinkan|generate|hasilkan|lukis|lukiskan|gambarkan|desain|desainkan|cetak|rancang)\w*\b[^\n]{0,60}\b(gambar|foto|ilustrasi|poster|logo|maskot|wallpaper|ikon|sketsa|lukisan|banner|sampul|postingan|post|feed|story|stories|thumbnail|infografis|flyer|brosur|meme|stiker|konten visual)\b/i.test(t);}
+function inferRatio(t){return /\b(story|stories|reels|tiktok|status wa)\b/i.test(t)?'9:16':/\b(thumbnail|youtube|banner|wallpaper|header|presentasi)\b/i.test(t)?'16:9':/\b(post|postingan|feed|instagram|\big\b|carousel|karusel)\b/i.test(t)?'4:5':'';}
+function carouselCount(t){const m=t.match(/(\d{1,2})\s*(slide|slaid|halaman|lembar|panel|gambar|foto|kartu)/i)||t.match(/(?:carousel|karusel)\s*(\d{1,2})\b/i);const n=m?+m[1]:5;return Math.max(2,Math.min(8,n));}
 function imgNodes(rec){
-  const box=document.createElement('div');box.className='gimgs';
+  const box=document.createElement('div');box.className=rec.carousel?'gimgs gcar':'gimgs';
   (rec.imgs||[]).forEach((u,i)=>{
     const im=document.createElement('img');im.className='gimg';im.alt='Gambar hasil '+(i+1);im.src=u;im.title='Klik untuk membuka ukuran penuh';
     im.addEventListener('click',()=>{const w=open();if(w){w.document.write('<title>Gambar</title><body style="margin:0;background:#111;display:grid;place-items:center;min-height:100vh"><img src="'+u+'" style="max-width:100%;max-height:100vh">');w.document.close();}});
@@ -2452,13 +2457,13 @@ function imgNodes(rec){
   return box;
 }
 function dlImg(u,name){const a=document.createElement('a');a.href=u;a.download=name;document.body.append(a);a.click();a.remove();}
-async function gImage(a,prompt,signal,refs){
-  let lastErr=null;
+async function gImage(a,prompt,signal,refs,opts){
+  opts=opts||{};let lastErr=null;
   for(const model of IMGM){
     let res;
-    try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify({contents:[{role:'user',parts:[{text:skPrompt(a,prompt,true)+prompt}].concat((refs||[]).slice(0,3).map(u=>{const m=/^data:(.+?);base64,(.*)$/.exec(u);return m?{inlineData:{mimeType:m[1],data:m[2]}}:null;}).filter(Boolean))}],generationConfig:{responseModalities:['TEXT','IMAGE']}})});}
+    try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify({contents:[{role:'user',parts:[{text:skPrompt(a,prompt,true)+prompt}].concat((refs||[]).slice(0,3).map(u=>{const m=/^data:(.+?);base64,(.*)$/.exec(u);return m?{inlineData:{mimeType:m[1],data:m[2]}}:null;}).filter(Boolean))}],generationConfig:Object.assign({responseModalities:['TEXT','IMAGE']},opts.ratio&&!opts.noRatio?{imageConfig:{aspectRatio:opts.ratio}}:{})})});}
     catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error(NETERR);er.net=1;throw er;}
-    if(!res.ok){const er=new Error(await gErr(res));er.code=res.status;lastErr=er;if(res.status===404||res.status===400)continue;throw er;}
+    if(!res.ok){const er=new Error(await gErr(res));er.code=res.status;lastErr=er;if(res.status===400&&opts.ratio&&!opts.noRatio)return gImage(a,prompt,signal,refs,Object.assign({},opts,{noRatio:1}));if(res.status===404||res.status===400)continue;throw er;}
     const j=await res.json(),c=j.candidates&&j.candidates[0];
     let text='';const imgs=[];
     if(c&&c.content&&c.content.parts)c.content.parts.forEach(p=>{
@@ -2467,6 +2472,7 @@ async function gImage(a,prompt,signal,refs){
       if(d&&d.data)imgs.push('data:'+(d.mimeType||d.mime_type||'image/png')+';base64,'+d.data);
     });
     if(imgs.length)return {text:text.trim(),imgs,finish:(c&&c.finishReason)||''};
+    if(!opts.retry&&!(signal&&signal.aborted))return gImage(a,'Hasilkan sebuah GAMBAR sekarang, bukan teks atau prompt. '+prompt,signal,refs,Object.assign({},opts,{retry:1}));
     lastErr=new Error('Model tidak mengembalikan gambar'+(text?': '+text.slice(0,200):' (mungkin ditolak oleh kebijakan konten). Coba ubah deskripsinya.'));
     break;
   }
@@ -2612,6 +2618,7 @@ function reviseBox(rec,onSend){
 function reviseRun(rec,instr){
   if(!GM.key){addMsg(boss,'Revisi butuh Gemini yang aktif. Klik tombol GEMINI di bawah chat.','hint');return;}
   const a=byId(rec.agent)||AG[1],img=!!(rec.imgs&&rec.imgs.length),orig=rec.orig||rec.prompt,h=!!htmlOf(rec.text);
+  if(rec.carousel){addMsg(boss,'Revisi untuk '+a.name+': '+instr,'sys',Date.now(),true);carouselRun(a,orig+'\n\nRevisi dari CEO (terapkan pada seluruh slide): '+instr+(rec.text?'\n\nCaption sebelumnya:\n'+rec.text.slice(0,1500):''),null,{title:'Revisi: '+instr.slice(0,80),from:rec});return;}
   const prompt='Ini REVISI atas hasil kerjamu sebelumnya.\nPermintaan awal CEO: "'+orig+'"\n\nHasil sebelumnya:\n'+rec.text.slice(0,40000)+'\n\nInstruksi revisi dari CEO: '+instr+'\n\nTerapkan revisi lalu berikan hasil lengkap yang sudah diperbarui, bukan hanya bagian yang berubah.'+(h?' Berikan SATU file HTML lengkap dalam satu blok ```html.':'')+(img?' Ubah gambar yang dilampirkan sesuai instruksi.':'');
   addMsg(boss,'Revisi untuk '+a.name+': '+instr,'sys',Date.now(),true);
   gemRun(a,prompt,true,null,img?'img':undefined,{title:'Revisi: '+instr.slice(0,80),from:rec,refs:rec.imgs});
@@ -2804,6 +2811,46 @@ async function teamRun(lead,full,ut,alt){
     stage('Selesai.');
   }finally{team.forEach(a=>{a.busy=Math.max(0,(a.busy||1)-1);});acts.remove();}
 }
+
+/* ---------- carousel: rancang slide, lalu buat tiap slide sebagai gambar dengan gaya seragam ---------- */
+async function carouselRun(a,prompt,ut,meta){
+  const n=carouselCount(prompt);
+  a.busy=(a.busy||0)+1;
+  const tkSet=(st,ow)=>{if(!ut)return;ut.st=st;ut.ow=ow;if(st===2)ut.dt=Date.now();save();refreshTasks(Date.now());};
+  tkSet(1,a.id);
+  const t0=Date.now(),r=addMsg(a,'Menyusun konsep carousel…','',t0,false);
+  r.tx.classList.add('ai','wait');
+  const acts=document.createElement('div');acts.className='acts';r.body.append(acts);
+  const ac=new AbortController();acts.append(mini('Hentikan',()=>ac.abort()));
+  const keep=()=>{a.bubble={text:'Membuat carousel…',ttl:1.4};};keep();const bt=setInterval(keep,700);
+  try{
+    const plan=await gStream(a,'Kamu merancang carousel Instagram untuk CEO. Permintaan: "'+prompt+'". Rancang '+n+' slide (slide 1 = cover yang menarik perhatian, slide terakhir = ajakan bertindak). Balas HANYA JSON valid tanpa markdown dengan bentuk: {"style":"gaya visual yang SERAGAM di semua slide: palet warna hex, tipografi, elemen dekorasi","caption":"caption Instagram lengkap beserta 5 sampai 8 hashtag","slides":[{"title":"judul pendek","text":"teks pendukung yang tampil di slide, maksimal 20 kata, bahasa Indonesia","visual":"deskripsi visual slide"}]}',false,ac.signal,()=>{},()=>{});
+    let P=null;try{const m=plan.text.match(/\{[\s\S]*\}/);P=JSON.parse(m?m[0]:'');}catch(e){P=null;}
+    const slides=(P&&Array.isArray(P.slides)&&P.slides.length?P.slides:Array.from({length:n},(_,i)=>({title:i?'Slide '+(i+1):prompt.slice(0,50),text:'',visual:prompt}))).slice(0,n);
+    const style=(P&&P.style)||'desain modern, bersih, kontras tinggi, tipografi tebal';
+    const imgs=[];let failed=0;
+    for(let i=0;i<slides.length;i++){
+      if(ac.signal.aborted)throw Object.assign(new Error('x'),{name:'AbortError'});
+      r.tx.classList.add('wait');r.tx.textContent='Membuat slide '+(i+1)+' dari '+slides.length+'…';
+      const sl=slides[i],ip='Buat SATU GAMBAR desain slide carousel Instagram, rasio 4:5 vertikal. Konteks: '+prompt+'. Gaya visual yang seragam di semua slide: '+style+'. Ini slide '+(i+1)+' dari '+slides.length+'. Teks yang HARUS tampil di gambar, besar, tebal, mudah dibaca, dengan ejaan persis: judul "'+(sl.title||'')+'"'+(sl.text?' dan teks "'+sl.text+'"':'')+'. Visual: '+(sl.visual||'')+'.'+(i?' Samakan gaya, warna, dan tipografi dengan gambar referensi terlampir.':'')+' Keluaran harus berupa gambar, bukan teks.';
+      try{const o=await gImage(a,ip,ac.signal,i&&imgs[0]?[imgs[0]]:null,{ratio:'4:5'});imgs.push(o.imgs[0]);}
+      catch(e){if(e&&e.name==='AbortError')throw e;failed++;if(!imgs.length&&i>=1&&failed>=2)throw e;}
+    }
+    if(!imgs.length)throw new Error('Tidak ada slide yang berhasil dibuat. Coba lagi.');
+    const cap=((P&&P.caption)||'').trim();
+    const text=(cap?'**Caption:**\n\n'+cap:'Carousel selesai.')+(failed?'\n\n_('+failed+' slide gagal dibuat. Tekan Revisi untuk mencoba lagi.)_':'');
+    const rec={id:'r'+t0,t:t0,agent:a.id,prompt:(meta&&meta.title)||prompt,text,task:!!ut,imgs,carousel:true};
+    if(meta&&meta.from){rec.orig=meta.from.orig||meta.from.prompt;rec.v=(meta.from.v||1)+1;}
+    results.push(rec);rSave();gCount();
+    log.push({t:Date.now(),id:a.id,text:'Carousel '+imgs.length+' slide selesai.',sys:''});save();
+    finishRow(r,acts,rec);tkSet(2,a.id);
+    a.bubble={text:'Carousel selesai',ttl:4};beep();
+  }catch(e){
+    tkSet(0,null);acts.replaceChildren();r.tx.className='tx hint';
+    r.tx.textContent=(e&&e.name==='AbortError')?'Dihentikan.':((e&&e.message)||'Terjadi kesalahan.');
+    if(!(e&&e.name==='AbortError'))acts.append(mini('Coba lagi',()=>{acts.remove();carouselRun(a,prompt,ut,meta);}));
+  }finally{a.busy=Math.max(0,(a.busy||1)-1);clearInterval(bt);if(a.bubble&&/^Membuat/.test(a.bubble.text))a.bubble=null;}
+}
 async function gemRun(a,prompt,task,ut,mode,meta){
  const img=mode==='img';
  lastAg=a;a.busy=(a.busy||0)+1;
@@ -2820,7 +2867,7 @@ async function gemRun(a,prompt,task,ut,mode,meta){
  const paint=()=>{raf=0;const near=msgs.scrollHeight-msgs.scrollTop-msgs.clientHeight<90;r.tx.classList.remove('wait');r.tx.replaceChildren(mdRender(cur.replace(/^\s*\[SKILL:[^\]\n]*(\]\s*|$)/i,'')));if(near)msgs.scrollTop=msgs.scrollHeight;};
  try{
   if(img){r.tx.classList.add('wait');r.tx.textContent='Sedang membuat gambar…';}
-  const out=img?await gImage(a,prompt,ac.signal,meta&&meta.refs):await gStream(a,prompt,task,ac.signal,t=>{streaming=true;cur=t;if(!raf)raf=requestAnimationFrame(paint);},m=>{if(!cur){r.tx.classList.add('wait');r.tx.textContent=m;}a.bubble={text:'Mencoba lagi…',ttl:1.4};});
+  const out=img?await gImage(a,prompt,ac.signal,meta&&meta.refs,{ratio:meta?'':inferRatio(prompt)}):await gStream(a,prompt,task,ac.signal,t=>{streaming=true;cur=t;if(!raf)raf=requestAnimationFrame(paint);},m=>{if(!cur){r.tx.classList.add('wait');r.tx.textContent=m;}a.bubble={text:'Mencoba lagi…',ttl:1.4};});
   if(raf)cancelAnimationFrame(raf);
   let text=out.text||(img?'Gambarnya sudah jadi, silakan dilihat.':'');
   let usedSk=[];{const sm=text.match(/^\s*\[SKILL:\s*([^\]\n]*)\]\s*/i);if(sm){usedSk=sm[1].split(',').map(x=>x.trim()).filter(x=>x&&x!=='-');text=text.slice(sm[0].length);}}
@@ -2832,10 +2879,10 @@ async function gemRun(a,prompt,task,ut,mode,meta){
   if(usedSk.length)rec.skills=usedSk;
   if(meta){meta.rec=rec;if(meta.team)rec.team=meta.team;}
   if(meta&&meta.from){rec.orig=meta.from.orig||meta.from.prompt;rec.v=(meta.from.v||1)+1;}
-  results.push(rec);rSave();gCount();
+  if(!(meta&&meta.noRec)){results.push(rec);rSave();gCount();}
   const flat=text.replace(/\s+/g,' ');
   log.push({t:Date.now(),id:a.id,text:flat.slice(0,220)+(flat.length>220?'… (selengkapnya di tombol HASIL)':''),sys:''});save();
-  finishRow(r,acts,rec);tkSet(2,a.id);
+  finishRow(r,acts,rec);if(meta&&meta.noRec)acts.remove();tkSet(2,a.id);
   a.bubble={text:'Selesai, cek hasilnya',ttl:4};beep();
   return text;
  }catch(e){
@@ -2885,7 +2932,8 @@ function finishRow(r,acts,rec){
  }
  if(rec.imgs&&rec.imgs.length){
   r.body.insertBefore(imgNodes(rec),acts);
-  rec.imgs.forEach((u,i)=>acts.append(mini(rec.imgs.length>1?'Unduh gambar '+(i+1):'Unduh gambar',()=>dlImg(u,'gambar-'+rec.agent+'-'+hhmm(rec.t).replace(':','')+(rec.imgs.length>1?'-'+(i+1):'')+'.png'))));
+  if(rec.carousel){acts.append(mini('Unduh semua slide',()=>rec.imgs.forEach((u,i)=>setTimeout(()=>dlImg(u,'carousel-'+(i+1)+'.png'),i*350))));acts.append(mini('Salin caption',function(){copyTxt(rec.text,this);}));}
+ else rec.imgs.forEach((u,i)=>acts.append(mini(rec.imgs.length>1?'Unduh gambar '+(i+1):'Unduh gambar',()=>dlImg(u,'gambar-'+rec.agent+'-'+hhmm(rec.t).replace(':','')+(rec.imgs.length>1?'-'+(i+1):'')+'.png'))));
  }
  msgs.scrollTop=msgs.scrollHeight;
 }
@@ -3005,6 +3053,7 @@ function respond(txt,forced){
   const gm=txt.match(/^\/gambar\b\s*(.*)/i),wantImg=!!gm||isImgReq(txt);
   if(gm&&!gm[1].trim()){addMsg(byId('boss'),'Contoh: /gambar kucing astronot di bulan, gaya pixel art','hint');return;}
   if(wantImg&&!GM.key){addMsg(byId('boss'),'Membuat gambar atau foto butuh Gemini. Klik tombol GEMINI di bawah chat lalu masukkan API key.','hint');return;}
+  if(GM.key&&wantImg&&isCarouselReq(txt)){carouselRun(forced||byId('nova'),txt,null);return;}
   if(GM.key){gemRun(forced||(wantImg?byId('nova'):pickAgent(txt)),gm?gm[1].trim():txt,false,null,wantImg?'img':undefined);return;}
   if(!GM.key&&skills.some(k=>k.on)&&!window.__skHint){window.__skHint=1;addMsg(byId('boss'),'Skill yang Anda unggah baru berpengaruh setelah Gemini terhubung. Sekarang balasan agen masih simulasi.','hint');}
   if(!hintedKey){hintedKey=true;addMsg(byId('boss'),'Balasan ini masih simulasi. Klik tombol GEMINI di bawah chat lalu masukkan API key dari Google AI Studio agar agen menjawab sungguhan.','hint');}
