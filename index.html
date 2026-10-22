@@ -164,6 +164,7 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
 .sk b{font-size:13px;overflow-wrap:anywhere}
 .sk p{font-size:12px;color:var(--muted);margin:4px 0 6px;line-height:1.5;overflow-wrap:anywhere}
 .sk select{background:#0f1116;border:1px solid var(--line);color:var(--text);border-radius:6px;padding:3px 6px;font-size:12px}
+.sktag{margin-top:6px;font:10px 'Silkscreen',monospace;letter-spacing:.06em;text-transform:uppercase;color:#e6c675}
 .rev{margin-top:8px;display:grid;gap:6px}
 .rev textarea{width:100%;background:#0f1116;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:8px 10px;font:inherit;font-size:14px;resize:vertical}
 .rev .chips{display:flex;gap:6px;flex-wrap:wrap}
@@ -2319,9 +2320,9 @@ const PERSONA={
  bolt:'Kamu Doraemon, QA engineer di Agent Office. Gaya: ceria tapi teliti. Keahlian: pengujian, mencari bug, kasus uji, risiko, checklist.'
 };
 function sysPrompt(a,task,prompt){
- return PERSONA[a.id]+'\nKamu bekerja untuk CEO bernama Prabowo di kantor virtual berisi Einstein (Engineer), DeepSeek (Desainer), dan Doraemon (QA). Waktu sekarang: '+new Date().toLocaleString('id-ID')+'.\nBalas dalam bahasa yang dipakai CEO (default Bahasa Indonesia). Gunakan Markdown.\n'+
+ return skPrompt(a,prompt||'')+PERSONA[a.id]+'\nKamu bekerja untuk CEO bernama Prabowo di kantor virtual berisi Einstein (Engineer), DeepSeek (Desainer), dan Doraemon (QA). Waktu sekarang: '+new Date().toLocaleString('id-ID')+'.\nBalas dalam bahasa yang dipakai CEO (default Bahasa Indonesia). Gunakan Markdown.\n'+
  (task?'Ini TUGAS: kerjakan sampai tuntas dan berikan hasil lengkap. Jika diminta halaman web atau antarmuka, berikan SATU file HTML lengkap (CSS dan JS inline) dalam satu blok ```html.':'Ini obrolan: jawab singkat dan natural (1 sampai 4 kalimat) kecuali CEO meminta detail. Jika permintaannya butuh hasil panjang (kode, dokumen, desain), kerjakan secara lengkap. Jika diminta halaman web atau antarmuka, berikan SATU file HTML lengkap dalam satu blok ```html.')+
- '\nTetap dalam peran sebagai karakter kantor.'+skPrompt(a,prompt||'');
+ '\nTetap dalam peran sebagai karakter kantor.';
 }
 /* ---------- usulan & persetujuan: agen mengajukan rencana, CEO (Anda) menyetujui atau menolak sebelum dikerjakan ---------- */
 const ALTS=['audit dulu bagian yang paling sering dipakai, supaya hasilnya tepat sasaran','buat versi ringkas dulu agar bisa ditinjau lebih cepat','tambahkan tes otomatis sekalian supaya tidak muncul regresi nanti','cek dulu apakah sudah ada komponen serupa yang bisa dipakai ulang'];
@@ -2453,7 +2454,7 @@ async function gImage(a,prompt,signal,refs){
   let lastErr=null;
   for(const model of IMGM){
     let res;
-    try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt}].concat((refs||[]).slice(0,3).map(u=>{const m=/^data:(.+?);base64,(.*)$/.exec(u);return m?{inlineData:{mimeType:m[1],data:m[2]}}:null;}).filter(Boolean))}],generationConfig:{responseModalities:['TEXT','IMAGE']}})});}
+    try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify({contents:[{role:'user',parts:[{text:skPrompt(a,prompt,true)+prompt}].concat((refs||[]).slice(0,3).map(u=>{const m=/^data:(.+?);base64,(.*)$/.exec(u);return m?{inlineData:{mimeType:m[1],data:m[2]}}:null;}).filter(Boolean))}],generationConfig:{responseModalities:['TEXT','IMAGE']}})});}
     catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error(NETERR);er.net=1;throw er;}
     if(!res.ok){const er=new Error(await gErr(res));er.code=res.status;lastErr=er;if(res.status===404||res.status===400)continue;throw er;}
     const j=await res.json(),c=j.candidates&&j.candidates[0];
@@ -2542,20 +2543,22 @@ function skAdd(sk){
   return cut;
 }
 function skCount(){$('#scount').textContent=String(skills.filter(x=>x.on).length);}
-function skPrompt(a,prompt){
+function skPrompt(a,prompt,img){
   const mine=skills.filter(k=>k.on&&(k.agent==='all'||k.agent===a.id));
   if(!mine.length)return '';
   const words=new Set(String(prompt).toLowerCase().split(/[^a-z0-9À-ɏ]+/).filter(w=>w.length>=4));
   const low=String(prompt).toLowerCase();
   const sc=k=>{let n=low.includes(k.name.toLowerCase())?10:0;(k.name+' '+k.desc).toLowerCase().split(/[^a-z0-9À-ɏ]+/).forEach(w=>{if(w.length>=4&&words.has(w))n++;});return n;};
   const ranked=mine.map(k=>({k,n:sc(k)})).sort((p,q)=>q.n-p.n);
-  let budget=SK_BUDGET,o='\n\nSKILL dari CEO (panduan kerja tambahan). Pakai yang relevan dengan permintaan dan ikuti instruksinya dengan setia; abaikan yang tidak relevan.';
+  let budget=img?8000:SK_BUDGET;
+  let o=img?'PANDUAN DARI CEO untuk gambar ini (terapkan bila relevan, mis. gaya, warna, komposisi):':
+   'SKILL DARI CEO (WAJIB DIPATUHI)\nSkill di bawah adalah instruksi kerja dari CEO. Bila sebuah skill relevan dengan permintaan, kamu WAJIB menerapkannya secara konkret pada hasil (format, gaya, langkah, isi). Instruksi skill yang relevan mengalahkan gaya bawaan seperti "jawab singkat". Awali balasan dengan satu baris persis seperti ini: [SKILL: nama-skill-yang-kamu-pakai] (pisahkan dengan koma, atau [SKILL: -] jika tidak ada yang relevan), lalu lanjutkan jawaban seperti biasa.';
   ranked.forEach(({k})=>{
     o+='\n\n### SKILL: '+k.name+(k.desc?'\nKapan dipakai: '+k.desc:'');
     if(k.body.length<=budget){o+='\n\n'+k.body;budget-=k.body.length;}
     else o+='\n(isi lengkap tidak dimuat karena batas panjang)';
   });
-  return o;
+  return o+'\n\n=== AKHIR SKILL ===\n\n';
 }
 function skRender(){
   const box=$('#sklist');box.replaceChildren();
@@ -2758,17 +2761,19 @@ async function gemRun(a,prompt,task,ut,mode,meta){
  let streaming=false,cur='',raf=0;
  const keep=()=>{if(a.bubble&&/^Mencoba/.test(a.bubble.text))return;a.bubble={text:img?'Membuat gambar…':streaming?'Menulis…':'Berpikir…',ttl:1.4};};
  keep();const bt=setInterval(keep,700);
- const paint=()=>{raf=0;const near=msgs.scrollHeight-msgs.scrollTop-msgs.clientHeight<90;r.tx.classList.remove('wait');r.tx.replaceChildren(mdRender(cur));if(near)msgs.scrollTop=msgs.scrollHeight;};
+ const paint=()=>{raf=0;const near=msgs.scrollHeight-msgs.scrollTop-msgs.clientHeight<90;r.tx.classList.remove('wait');r.tx.replaceChildren(mdRender(cur.replace(/^\s*\[SKILL:[^\]\n]*(\]\s*|$)/i,'')));if(near)msgs.scrollTop=msgs.scrollHeight;};
  try{
   if(img){r.tx.classList.add('wait');r.tx.textContent='Sedang membuat gambar…';}
   const out=img?await gImage(a,prompt,ac.signal,meta&&meta.refs):await gStream(a,prompt,task,ac.signal,t=>{streaming=true;cur=t;if(!raf)raf=requestAnimationFrame(paint);},m=>{if(!cur){r.tx.classList.add('wait');r.tx.textContent=m;}a.bubble={text:'Mencoba lagi…',ttl:1.4};});
   if(raf)cancelAnimationFrame(raf);
   let text=out.text||(img?'Gambarnya sudah jadi, silakan dilihat.':'');
+  let usedSk=[];{const sm=text.match(/^\s*\[SKILL:\s*([^\]\n]*)\]\s*/i);if(sm){usedSk=sm[1].split(',').map(x=>x.trim()).filter(x=>x&&x!=='-');text=text.slice(sm[0].length);}}
   if(out.finish==='MAX_TOKENS')text+='\n\n_(Jawaban terpotong karena mencapai batas panjang. Minta agen melanjutkan.)_';
   const h=hist[a.id]=hist[a.id]||[];
   h.push({role:'user',parts:[{text:(meta&&meta.title)||prompt}]},{role:'model',parts:[{text:text.slice(0,6000)}]});
   while(h.length>16)h.splice(0,2);
   const rec={id:'r'+t0,t:t0,agent:a.id,prompt:(meta&&meta.title)||prompt,text,task:!!task,imgs:out.imgs};
+  if(usedSk.length)rec.skills=usedSk;
   if(meta&&meta.from){rec.orig=meta.from.orig||meta.from.prompt;rec.v=(meta.from.v||1)+1;}
   results.push(rec);rSave();gCount();
   const flat=text.replace(/\s+/g,' ');
@@ -2796,6 +2801,7 @@ async function gemRun(a,prompt,task,ut,mode,meta){
 }
 function finishRow(r,acts,rec){
  r.tx.className='tx ai';r.tx.replaceChildren(mdRender(rec.text));
+ if(rec.skills&&rec.skills.length){const t=document.createElement('div');t.className='sktag';t.textContent='Skill dipakai: '+rec.skills.join(', ');r.body.insertBefore(t,acts);}
  if(r.tx.scrollHeight>250)r.tx.classList.add('clamp');
  let rvb=null;
  acts.replaceChildren(mini('Lihat hasil',()=>openRes(rec),1),mini('Revisi',()=>{
@@ -2942,6 +2948,7 @@ function respond(txt,forced){
   if(gm&&!gm[1].trim()){addMsg(byId('boss'),'Contoh: /gambar kucing astronot di bulan, gaya pixel art','hint');return;}
   if(wantImg&&!GM.key){addMsg(byId('boss'),'Membuat gambar atau foto butuh Gemini. Klik tombol GEMINI di bawah chat lalu masukkan API key.','hint');return;}
   if(GM.key){gemRun(forced||(wantImg?byId('nova'):pickAgent(txt)),gm?gm[1].trim():txt,false,null,wantImg?'img':undefined);return;}
+  if(!GM.key&&skills.some(k=>k.on)&&!window.__skHint){window.__skHint=1;addMsg(byId('boss'),'Skill yang Anda unggah baru berpengaruh setelah Gemini terhubung. Sekarang balasan agen masih simulasi.','hint');}
   if(!hintedKey){hintedKey=true;addMsg(byId('boss'),'Balasan ini masih simulasi. Klik tombol GEMINI di bawah chat lalu masukkan API key dari Google AI Studio agar agen menjawab sungguhan.','hint');}
   const m=AIS.find(a=>new RegExp('@'+a.name,'i').test(txt));
   const who=forced||m||pick(AIS);
