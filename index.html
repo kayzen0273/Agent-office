@@ -1,3 +1,4 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>Agent Office</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Silkscreen&display=swap">
@@ -220,6 +221,7 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
       <button class="chip" id="gbtn" type="button" title="Hubungkan ke Gemini / Google AI Studio"><i id="gdot"></i>GEMINI</button>
       <button class="chip" id="rbtn" type="button" title="Riwayat hasil kerja agen">HASIL <b id="rcount">0</b></button>
       <button class="chip" id="sbtn" type="button" title="Unggah skill untuk agen">SKILL <b id="scount">0</b></button>
+      <button class="chip" id="sbbtn" type="button" title="Simpan dan sinkronkan data ke Supabase"><i id="sbdot"></i>SUPABASE</button>
       <span class="mn" id="mentions"></span>
       <span class="gs" id="gline"></span>
      </div>
@@ -269,6 +271,21 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
    <p class="stat" id="skstat" aria-live="polite"></p>
    <div id="sklist"></div>
   </div>
+ </div>
+</div>
+<div class="ov" id="gsb" hidden>
+ <div class="dlg sm" role="dialog" aria-modal="true" aria-labelledby="sbt">
+  <div class="dh"><h2 id="sbt">Supabase</h2><button class="mini" type="button" data-x>Tutup</button></div>
+  <div class="db">
+   <p class="note">Hasil kerja agen (termasuk gambar), skill, daftar tugas di papan, dan riwayat chat disimpan di proyek Supabase Anda, jadi sama di semua perangkat. Buat proyek gratis di <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer">supabase.com</a>, jalankan SQL di bawah sekali di SQL Editor, lalu isi kolom ini. Yang dipakai adalah <b>anon key</b> (bukan service key).</p>
+   <details style="margin:0 0 12px"><summary style="cursor:pointer;font-size:12px;color:#7db4ff">Lihat SQL penyiapan</summary><pre id="sbsqlpre" style="white-space:pre-wrap;font:11px monospace;background:#0f1116;border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0;color:#c9d1e6;max-height:220px;overflow:auto"></pre><button class="mini" id="sbsql" type="button">Salin SQL</button></details>
+   <label class="fld"><span>Project URL</span><input id="sburl" autocomplete="off" spellcheck="false" placeholder="https://xxxx.supabase.co"></label>
+   <label class="fld"><span>Anon key</span><input id="sbkey" type="password" autocomplete="off" spellcheck="false" placeholder="eyJ..."></label>
+   <label class="fld"><span>Email</span><input id="sbemail" type="email" autocomplete="username" placeholder="email@contoh.com"></label>
+   <label class="fld"><span>Kata sandi (minimal 6 karakter, tidak disimpan di browser)</span><input id="sbpass" type="password" autocomplete="current-password"></label>
+   <p class="stat" id="sbstat" aria-live="polite"></p>
+  </div>
+  <div class="df"><button class="mini pri" id="sbin" type="button">Masuk</button><button class="mini" id="sbup" type="button">Daftar</button><button class="mini" id="sbsync" type="button">Sinkron sekarang</button><button class="mini" id="sbout" type="button">Keluar</button></div>
  </div>
 </div>
 <div class="ov" id="glist" hidden>
@@ -2864,36 +2881,70 @@ function reviseRun(rec,instr){
 }
 
 /* ---------- Supabase: simpan & sinkronkan hasil, gambar, dan skill (REST langsung, tanpa pustaka) ---------- */
-const SBT='/rest/v1/office_shared',SBB='agent-office';
-/* Supabase sudah tertanam: tanpa tombol, tanpa login. Data dipakai bersama lewat anon key.
-   Jalankan SQL ini sekali di SQL Editor Supabase:
-   create table if not exists public.office_shared (kind text not null, id text not null, data jsonb not null, updated_at timestamptz not null default now(), primary key (kind,id));
-   alter table public.office_shared enable row level security;
-   create policy "office bersama" on public.office_shared for all to anon using (true) with check (true);
-   insert into storage.buckets (id,name,public) values ('agent-office','agent-office',true) on conflict (id) do nothing;
-   create policy "office unggah" on storage.objects for insert to anon with check (bucket_id='agent-office');
-   create policy "office ubah" on storage.objects for update to anon using (bucket_id='agent-office'); */
-const SB={url:'https://bcvjcobumvulyqqiuyjn.supabase.co',key:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjdmpjb2J1bXZ1bHlxcWl1eWpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2NTIzOTIsImV4cCI6MjEwODIyODM5Mn0.SjA5lEg4DYoJjKQlShEcmLNG8SwGQt3VAAmC1YmMuL4'};
-const sbOn=()=>true;
+const SBK='agentOffice.supabase.v1',SBT='/rest/v1/office_data',SBB='agent-office';
+const SB_SQL=`create table if not exists public.office_data (
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  kind text not null,
+  id text not null,
+  data jsonb not null,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, kind, id)
+);
+alter table public.office_data enable row level security;
+create policy "data milik sendiri" on public.office_data
+  for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+insert into storage.buckets (id, name, public) values ('agent-office', 'agent-office', true)
+  on conflict (id) do nothing;
+create policy "unggah gambar sendiri" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'agent-office' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "ubah gambar sendiri" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'agent-office' and (storage.foldername(name))[1] = auth.uid()::text);`;
+let SB={url:'https://bcvjcobumvulyqqiuyjn.supabase.co',key:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjdmpjb2J1bXZ1bHlxcWl1eWpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2NTIzOTIsImV4cCI6MjEwODIyODM5Mn0.SjA5lEg4DYoJjKQlShEcmLNG8SwGQt3VAAmC1YmMuL4',sess:null};
+try{const g=JSON.parse(localStorage.getItem(SBK)||'{}');if(g.url)SB.url=String(g.url);if(g.key)SB.key=String(g.key).replace(/[^\x21-\x7E]/g,'');SB.sess=g.sess||null;}catch(e){}
+function sbPersist(){try{localStorage.setItem(SBK,JSON.stringify({url:SB.url,key:SB.key,sess:SB.sess}));}catch(e){}}
+const sbOn=()=>!!(SB.url&&SB.key&&SB.sess&&SB.sess.access_token);
 const sbKnown={skill:new Set(),result:new Set(),task:new Set(),chat:new Set()},sbLast={},sbPruned={v:false};
 const chatId=e=>e.t+'-'+e.id+'-'+hs(String(e.text||'')).toString(36);
 let sbTimer=0,sbBusy=false,sbMsg='';
-let sbWarned=false;
-function sbStat(t,c){sbMsg=t;if(c==='err'&&!sbWarned){sbWarned=true;try{addMsg(byId('boss'),'Sinkron ke Supabase gagal: '+t,'hint');}catch(e){}}}
+function sbStat(t,c){sbMsg=t;const e=$('#sbstat');if(e){e.textContent=t;e.className='stat'+(c?' '+c:'');}}
+function sbUI(){$('#sbdot').classList.toggle('on',sbOn());}
 async function sbErr(res){
   let m='';try{const j=await res.json();m=j.message||j.msg||j.error_description||j.error||'';}catch(e){}
-  if(res.status===404||/relation|schema cache|does not exist|PGRST20/i.test(m))return 'Tabel belum dibuat. Jalankan SQL penyiapan (lihat komentar di kode) di SQL Editor Supabase dulu.';
-  if(res.status===401||res.status===403)return 'Akses ditolak ('+res.status+'). Periksa kebijakan (RLS) dari SQL penyiapan. '+String(m).slice(0,120);
+  if(res.status===404||/relation|schema cache|does not exist|PGRST20/i.test(m))return 'Tabel belum dibuat. Jalankan SQL penyiapan di SQL Editor Supabase dulu.';
+  if(res.status===401||res.status===403)return 'Akses ditolak ('+res.status+'). Masuk ulang, atau periksa kebijakan (RLS) dari SQL penyiapan. '+String(m).slice(0,120);
   return 'Supabase error '+res.status+(m?': '+String(m).slice(0,160):'');
 }
-async function sbFetch(path,opts){
+async function sbAuth(path,body){
+  const res=await fetch(SB.url+'/auth/v1/'+path,{method:'POST',headers:{apikey:SB.key,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await res.json().catch(()=>({}));
+  if(!res.ok)throw new Error(j.error_description||j.msg||j.message||('Gagal ('+res.status+')'));
+  return j;
+}
+function sbSetSess(j){
+  if(!j.access_token)return false;
+  SB.sess={access_token:j.access_token,refresh_token:j.refresh_token,exp:Date.now()+(j.expires_in||3600)*1000,uid:j.user&&j.user.id||(SB.sess&&SB.sess.uid),email:j.user&&j.user.email||(SB.sess&&SB.sess.email)};
+  sbPersist();return true;
+}
+async function sbRefresh(){
+  if(!SB.sess||!SB.sess.refresh_token)return false;
+  try{const j=await sbAuth('token?grant_type=refresh_token',{refresh_token:SB.sess.refresh_token});return sbSetSess(j);}catch(e){SB.sess=null;sbPersist();sbUI();return false;}
+}
+async function sbFetch(path,opts,retry){
+  if(SB.sess&&SB.sess.exp&&Date.now()>SB.sess.exp-60000)await sbRefresh();
+  if(!sbOn())throw new Error('Belum masuk ke Supabase.');
   opts=opts||{};
-  return fetch(SB.url+path,Object.assign({},opts,{headers:Object.assign({apikey:SB.key,Authorization:'Bearer '+SB.key},opts.headers||{})}));
+  const res=await fetch(SB.url+path,Object.assign({},opts,{headers:Object.assign({apikey:SB.key,Authorization:'Bearer '+SB.sess.access_token},opts.headers||{})}));
+  if(res.status===401&&retry!==false&&await sbRefresh())return sbFetch(path,opts,false);
+  return res;
 }
 async function sbUpsert(kind,items){
   if(!items.length)return;
-  const rows=items.map(i=>({kind,id:i.id,data:i.data,updated_at:new Date().toISOString()}));
-  const res=await sbFetch(SBT+'?on_conflict=kind,id',{method:'POST',headers:{'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(rows)});
+  const rows=items.map(i=>({user_id:SB.sess.uid,kind,id:i.id,data:i.data,updated_at:new Date().toISOString()}));
+  const res=await sbFetch(SBT+'?on_conflict=user_id,kind,id',{method:'POST',headers:{'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(rows)});
   if(!res.ok)throw new Error(await sbErr(res));
 }
 async function sbDelete(kind,id){
@@ -2901,7 +2952,7 @@ async function sbDelete(kind,id){
   if(!res.ok)throw new Error(await sbErr(res));
 }
 async function sbUploadImg(dataUrl,name){
-  const blob=await (await fetch(dataUrl)).blob(),path='shared/'+name+'.png';
+  const blob=await (await fetch(dataUrl)).blob(),path=SB.sess.uid+'/'+name+'.png';
   const res=await sbFetch('/storage/v1/object/'+SBB+'/'+path,{method:'POST',headers:{'Content-Type':blob.type||'image/png','x-upsert':'true'},body:blob});
   if(!res.ok){const m=await sbErr(res);throw new Error(/Tabel belum/.test(m)?'Bucket gambar belum dibuat. Jalankan SQL penyiapan.':m);}
   return SB.url+'/storage/v1/object/public/'+SBB+'/'+path;
@@ -2935,7 +2986,7 @@ async function sbFlush(){
       if(!sbPruned.v){sbPruned.v=true;const old=new Date(Date.now()-2*86400e3).toISOString();await sbFetch(SBT+'?kind=eq.chat&updated_at=lt.'+encodeURIComponent(old),{method:'DELETE'});}
     }
     if(changed){try{localStorage.setItem(RSK,JSON.stringify(rSer(results.slice(-30))));}catch(e){}}
-    sbStat('Tersinkron '+new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})+'','ok');
+    sbStat('Tersinkron '+new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})+' · '+SB.sess.email,'ok');
   }catch(e){sbStat(e.message||'Sinkron gagal.','err');}
   finally{sbBusy=false;}
 }
@@ -2982,7 +3033,38 @@ async function sbSync(){
   try{await sbFlush();const n=await sbPull();if(n&&sbMsg.indexOf('Tersinkron')===0)sbStat(sbMsg+' · '+n+' item dari perangkat lain','ok');}
   catch(e){sbStat(e.message||'Sinkron gagal.','err');}
 }
-setTimeout(sbSync,1500);
+function sbOpen(){
+  $('#sburl').value=SB.url;$('#sbkey').value=SB.key;$('#sbemail').value=(SB.sess&&SB.sess.email)||$('#sbemail').value;$('#sbpass').value='';
+  $('#sbsqlpre').textContent=SB_SQL;
+  if(!sbMsg)sbStat(sbOn()?'Masuk sebagai '+SB.sess.email:'Belum masuk.','');
+  $('#gsb').hidden=false;
+}
+function sbReadForm(){
+  let u=$('#sburl').value.trim().replace(/\/+$/,''),k=$('#sbkey').value.replace(/[^\x21-\x7E]/g,'');
+  if(!/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)$/i.test(u)&&!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(u))throw new Error('Project URL harus berbentuk https://xxxx.supabase.co');
+  if(k.length<20)throw new Error('Anon key belum diisi.');
+  if(SB.url!==u||SB.key!==k)SB.sess=null;
+  SB.url=u;SB.key=k;
+  return {email:$('#sbemail').value.trim(),password:$('#sbpass').value};
+}
+async function sbLogin(signup){
+  try{
+    const {email,password}=sbReadForm();
+    if(!email||password.length<6)throw new Error('Isi email dan kata sandi (minimal 6 karakter).');
+    sbStat(signup?'Mendaftar…':'Masuk…','');
+    const j=signup?await sbAuth('signup',{email,password}):await sbAuth('token?grant_type=password',{email,password});
+    if(!sbSetSess(j)){SB.sess=null;sbPersist();sbUI();sbStat('Pendaftaran berhasil. Cek email untuk konfirmasi, lalu tekan Masuk.','warn');return;}
+    sbPersist();sbUI();$('#sbpass').value='';
+    await sbSync();
+  }catch(e){sbStat(e.message,'err');}
+}
+$('#sbbtn').addEventListener('click',sbOpen);
+$('#sbin').addEventListener('click',()=>sbLogin(false));
+$('#sbup').addEventListener('click',()=>sbLogin(true));
+$('#sbsync').addEventListener('click',async()=>{try{sbReadForm();}catch(e){sbStat(e.message,'err');return;}if(!sbOn()){sbStat('Masuk dulu.','err');return;}sbPersist();await sbSync();});
+$('#sbout').addEventListener('click',()=>{SB.sess=null;sbPersist();sbUI();sbStat('Keluar. Data lokal di browser ini tetap ada.','');});
+$('#sbsql').addEventListener('click',function(){copyTxt(SB_SQL,this);});
+sbUI();if(sbOn())setTimeout(sbSync,1500);
 
 function htmlOf(t){const m=t.match(/```html[^\n]*\n([\s\S]*?)```/i)||t.match(/```html[^\n]*\n([\s\S]*)$/i);return m?m[1].trim():'';}
 
