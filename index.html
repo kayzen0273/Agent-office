@@ -277,7 +277,7 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
  <div class="dlg sm" role="dialog" aria-modal="true" aria-labelledby="sbt">
   <div class="dh"><h2 id="sbt">Supabase</h2><button class="mini" type="button" data-x>Tutup</button></div>
   <div class="db">
-   <p class="note">Hasil kerja agen (termasuk gambar) dan skill disimpan di proyek Supabase Anda, jadi sama di semua perangkat. Buat proyek gratis di <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer">supabase.com</a>, jalankan SQL di bawah sekali di SQL Editor, lalu isi kolom ini. Yang dipakai adalah <b>anon key</b> (bukan service key).</p>
+   <p class="note">Hasil kerja agen (termasuk gambar), skill, daftar tugas di papan, dan riwayat chat disimpan di proyek Supabase Anda, jadi sama di semua perangkat. Buat proyek gratis di <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer">supabase.com</a>, jalankan SQL di bawah sekali di SQL Editor, lalu isi kolom ini. Yang dipakai adalah <b>anon key</b> (bukan service key).</p>
    <details style="margin:0 0 12px"><summary style="cursor:pointer;font-size:12px;color:#7db4ff">Lihat SQL penyiapan</summary><pre id="sbsqlpre" style="white-space:pre-wrap;font:11px monospace;background:#0f1116;border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0;color:#c9d1e6;max-height:220px;overflow:auto"></pre><button class="mini" id="sbsql" type="button">Salin SQL</button></details>
    <label class="fld"><span>Project URL</span><input id="sburl" autocomplete="off" spellcheck="false" placeholder="https://xxxx.supabase.co"></label>
    <label class="fld"><span>Anon key</span><input id="sbkey" type="password" autocomplete="off" spellcheck="false" placeholder="eyJ..."></label>
@@ -2180,11 +2180,11 @@ const LOGKEY='agentOffice.v1';
 let log=[];
 try{const raw=JSON.parse(localStorage.getItem(LOGKEY)||'{}');log=raw.log||[];utasks=raw.utasks||[];}catch(e){log=[];utasks=[];}
 {const n=Date.now();log=log.filter(e=>n-e.t<6*3600e3);utasks=utasks.filter(u=>n-u.t<6*3600e3&&u.ap!=='pending');}
-function save(){try{localStorage.setItem(LOGKEY,JSON.stringify({log:log.slice(-60),utasks}));}catch(e){}}
+function save(){sbSchedule();try{localStorage.setItem(LOGKEY,JSON.stringify({log:log.slice(-60),utasks}));}catch(e){}}
 const hhmm=ms=>{const d=new Date(ms||Date.now());return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
 function addMsg(a,text,sys,t,keep){
   t=t||Date.now();
-  const row=document.createElement('div');row.className='msg';
+  const row=document.createElement('div');row.className='msg';row.dataset.t=String(t);
   const img=document.createElement('img');img.className='av';img.alt='';img.src=AV[a.id];
   const body=document.createElement('div');
   const hd=document.createElement('div');hd.className='hd';
@@ -2702,7 +2702,8 @@ let SB={url:'https://bcvjcobumvulyqqiuyjn.supabase.co',key:'eyJhbGciOiJIUzI1NiIs
 try{const g=JSON.parse(localStorage.getItem(SBK)||'{}');if(g.url)SB.url=String(g.url);if(g.key)SB.key=String(g.key).replace(/[^\x21-\x7E]/g,'');SB.sess=g.sess||null;}catch(e){}
 function sbPersist(){try{localStorage.setItem(SBK,JSON.stringify({url:SB.url,key:SB.key,sess:SB.sess}));}catch(e){}}
 const sbOn=()=>!!(SB.url&&SB.key&&SB.sess&&SB.sess.access_token);
-const sbKnown={skill:new Set(),result:new Set()};
+const sbKnown={skill:new Set(),result:new Set(),task:new Set(),chat:new Set()},sbLast={},sbPruned={v:false};
+const chatId=e=>e.t+'-'+e.id+'-'+hs(String(e.text||'')).toString(36);
 let sbTimer=0,sbBusy=false,sbMsg='';
 function sbStat(t,c){sbMsg=t;const e=$('#sbstat');if(e){e.textContent=t;e.className='stat'+(c?' '+c:'');}}
 function sbUI(){$('#sbdot').classList.toggle('on',sbOn());}
@@ -2758,7 +2759,7 @@ async function sbFlush(){
   sbBusy=true;let changed=false;
   try{
     const ski=skills.map(k=>({id:k.id,data:{id:k.id,name:k.name,desc:k.desc,body:k.body,agent:k.agent,on:k.on}}));
-    await sbUpsert('skill',ski);
+    {const sig=JSON.stringify(ski);if(sbLast.skill!==sig){await sbUpsert('skill',ski);sbLast.skill=sig;}}
     for(const id of [...sbKnown.skill])if(!skills.some(k=>k.id===id)){await sbDelete('skill',id);sbKnown.skill.delete(id);}
     ski.forEach(x=>sbKnown.skill.add(x.id));
     for(const rec of results.slice()){
@@ -2769,6 +2770,16 @@ async function sbFlush(){
       rec._sb=true;sbKnown.result.add(rec.id);changed=true;
     }
     for(const id of [...sbKnown.result])if(!results.some(r=>r.id===id)){await sbDelete('result',id);sbKnown.result.delete(id);}
+    {
+      const tk=utasks.filter(u=>u.ap!=='pending').map(u=>({id:String(u.t),data:u})),sig=JSON.stringify(tk);
+      if(sbLast.task!==sig){await sbUpsert('task',tk);sbLast.task=sig;}
+      for(const id of [...sbKnown.task])if(!utasks.some(u=>String(u.t)===id)){await sbDelete('task',id);sbKnown.task.delete(id);}
+      tk.forEach(x=>sbKnown.task.add(x.id));
+      const ch=log.map(e=>({id:chatId(e),data:e})).filter(x=>!sbKnown.chat.has(x.id));
+      for(let i=0;i<ch.length;i+=50)await sbUpsert('chat',ch.slice(i,i+50));
+      ch.forEach(x=>sbKnown.chat.add(x.id));
+      if(!sbPruned.v){sbPruned.v=true;const old=new Date(Date.now()-2*86400e3).toISOString();await sbFetch(SBT+'?kind=eq.chat&updated_at=lt.'+encodeURIComponent(old),{method:'DELETE'});}
+    }
     if(changed){try{localStorage.setItem(RSK,JSON.stringify(rSer(results.slice(-30))));}catch(e){}}
     sbStat('Tersinkron '+new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})+' · '+SB.sess.email,'ok');
   }catch(e){sbStat(e.message||'Sinkron gagal.','err');}
@@ -2777,7 +2788,7 @@ async function sbFlush(){
 async function sbPull(){
   const res=await sbFetch(SBT+'?select=kind,id,data,updated_at&order=updated_at.asc&limit=2000');
   if(!res.ok)throw new Error(await sbErr(res));
-  const rows=await res.json();let added=0;
+  const rows=await res.json();let added=0;const newChat=[];
   rows.forEach(row=>{
     const d=row.data||{};
     if(row.kind==='skill'){
@@ -2785,13 +2796,27 @@ async function sbPull(){
       const rec={id:row.id,name:d.name,desc:d.desc||'',body:d.body||'',agent:d.agent||'all',on:d.on!==false};
       const i=skills.findIndex(k=>k.id===row.id);
       if(i<0){skills.push(rec);added++;}else skills[i]=rec;
+    }else if(row.kind==='task'){
+      sbKnown.task.add(row.id);
+      const i=utasks.findIndex(u=>String(u.t)===row.id);
+      if(i<0){if(Date.now()-d.t<6*3600e3&&d.ap!=='pending'){utasks.push(d);added++;}}else utasks[i]=d;
+    }else if(row.kind==='chat'){
+      sbKnown.chat.add(row.id);
+      if(Date.now()-d.t<6*3600e3&&!log.some(e=>chatId(e)===row.id)){log.push(d);newChat.push(d);added++;}
     }else if(row.kind==='result'){
       sbKnown.result.add(row.id);
       const have=results.find(r=>r.id===row.id);
       if(have)have._sb=true;else{results.push(Object.assign({},d,{_sb:true}));added++;}
     }
   });
-  results.sort((p,q)=>p.t-q.t);
+  results.sort((p,q)=>p.t-q.t);log.sort((p,q)=>p.t-q.t);utasks.sort((p,q)=>p.t-q.t);
+  try{localStorage.setItem(LOGKEY,JSON.stringify({log:log.slice(-60),utasks}));}catch(e){}
+  refreshTasks(Date.now());
+  newChat.filter(e=>byId(e.id)).forEach(e=>{
+    const r=addMsg(byId(e.id),e.text,e.sys,e.t,false);
+    const nx=[...msgs.children].find(c=>c!==r.row&&+c.dataset.t>e.t);if(nx)msgs.insertBefore(r.row,nx);
+  });
+  msgs.scrollTop=msgs.scrollHeight;
   try{localStorage.setItem(SKK,JSON.stringify(skills));}catch(e){}
   try{localStorage.setItem(RSK,JSON.stringify(rSer(results.slice(-30))));}catch(e){}
   skCount();gCount();
