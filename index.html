@@ -158,6 +158,12 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
 .stat{font-size:12px;min-height:18px;margin:4px 0 0;color:var(--muted);overflow-wrap:anywhere}
 .stat.ok{color:var(--ok)}.stat.err{color:#ff8f86}.stat.warn{color:#f4b26a}
 .tabs{display:flex;gap:6px;margin:0 0 12px}
+.sk{background:#10121a;border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin:0 0 8px}
+.sk.off{opacity:.55}
+.sk .sh{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sk b{font-size:13px;overflow-wrap:anywhere}
+.sk p{font-size:12px;color:var(--muted);margin:4px 0 6px;line-height:1.5;overflow-wrap:anywhere}
+.sk select{background:#0f1116;border:1px solid var(--line);color:var(--text);border-radius:6px;padding:3px 6px;font-size:12px}
 .pv{margin-top:8px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
 .pv iframe{display:block;width:100%;height:300px;border:0;background:#fff}
 .pv .cap{font:10px 'Silkscreen',monospace;letter-spacing:.06em;padding:5px 8px;background:rgba(255,255,255,.06);color:#9aa4bd;text-transform:uppercase}
@@ -206,6 +212,7 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
     <div class="tools">
       <button class="chip" id="gbtn" type="button" title="Hubungkan ke Gemini / Google AI Studio"><i id="gdot"></i>GEMINI</button>
       <button class="chip" id="rbtn" type="button" title="Riwayat hasil kerja agen">HASIL <b id="rcount">0</b></button>
+      <button class="chip" id="sbtn" type="button" title="Unggah skill untuk agen">SKILL <b id="scount">0</b></button>
       <span class="mn" id="mentions"></span>
       <span class="gs" id="gline"></span>
      </div>
@@ -241,6 +248,19 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
    <div id="rbody"></div>
   </div>
   <div class="df"><button class="mini pri" id="rcopy" type="button">Salin</button><button class="mini" id="rmd" type="button">Unduh .md</button><button class="mini" id="rhtml" type="button" hidden>Unduh .html</button></div>
+ </div>
+</div>
+<div class="ov" id="gskill" hidden>
+ <div class="dlg sm" role="dialog" aria-modal="true" aria-labelledby="skt">
+  <div class="dh"><h2 id="skt">Skill agen</h2><button class="mini" type="button" data-x>Tutup</button></div>
+  <div class="db">
+   <p class="note">Unggah skill (file <b>SKILL.md</b>, <b>.md</b>, <b>.txt</b>, atau paket <b>.zip / .skill</b>) atau tempel isinya. Skill yang aktif dipakai agen saat Gemini terhubung. Tersimpan hanya di browser ini.</p>
+   <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="mini pri" id="skup" type="button">Unggah file skill</button><button class="mini" id="skpaste" type="button">Tempel teks</button></div>
+   <input id="skfile" type="file" accept=".md,.markdown,.txt,.zip,.skill" multiple hidden>
+   <div id="skbox" hidden><label class="fld"><span>Isi skill (boleh dengan frontmatter name dan description)</span><textarea id="sktxt" rows="7" spellcheck="false" style="width:100%;background:#0f1116;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:9px 11px;font:12px monospace"></textarea></label><button class="mini pri" id="skadd" type="button">Tambah skill</button></div>
+   <p class="stat" id="skstat" aria-live="polite"></p>
+   <div id="sklist"></div>
+  </div>
  </div>
 </div>
 <div class="ov" id="glist" hidden>
@@ -2292,10 +2312,10 @@ const PERSONA={
  nova:'Kamu DeepSeek, Desainer UI/UX di Agent Office. Gaya: visual, rapi, peka detail. Keahlian: antarmuka, warna, tipografi, layout, HTML/CSS.',
  bolt:'Kamu Doraemon, QA engineer di Agent Office. Gaya: ceria tapi teliti. Keahlian: pengujian, mencari bug, kasus uji, risiko, checklist.'
 };
-function sysPrompt(a,task){
+function sysPrompt(a,task,prompt){
  return PERSONA[a.id]+'\nKamu bekerja untuk CEO bernama Prabowo di kantor virtual berisi Einstein (Engineer), DeepSeek (Desainer), dan Doraemon (QA). Waktu sekarang: '+new Date().toLocaleString('id-ID')+'.\nBalas dalam bahasa yang dipakai CEO (default Bahasa Indonesia). Gunakan Markdown.\n'+
  (task?'Ini TUGAS: kerjakan sampai tuntas dan berikan hasil lengkap. Jika diminta halaman web atau antarmuka, berikan SATU file HTML lengkap (CSS dan JS inline) dalam satu blok ```html.':'Ini obrolan: jawab singkat dan natural (1 sampai 4 kalimat) kecuali CEO meminta detail. Jika permintaannya butuh hasil panjang (kode, dokumen, desain), kerjakan secara lengkap. Jika diminta halaman web atau antarmuka, berikan SATU file HTML lengkap dalam satu blok ```html.')+
- '\nTetap dalam peran sebagai karakter kantor.';
+ '\nTetap dalam peran sebagai karakter kantor.'+skPrompt(a,prompt||'');
 }
 /* ---------- usulan & persetujuan: agen mengajukan rencana, CEO (Anda) menyetujui atau menolak sebelum dikerjakan ---------- */
 const ALTS=['audit dulu bagian yang paling sering dipakai, supaya hasilnya tepat sasaran','buat versi ringkas dulu agar bisa ditinjau lebih cepat','tambahkan tes otomatis sekalian supaya tidak muncul regresi nanti','cek dulu apakah sudah ada komponen serupa yang bisa dipakai ulang'];
@@ -2443,6 +2463,128 @@ async function gImage(a,prompt,signal){
   }
   throw lastErr||new Error('Pembuatan gambar gagal.');
 }
+
+/* ---------- skill: diunggah CEO, dipakai agen lewat instruksi sistem ---------- */
+const SKK='agentOffice.skills.v1',SK_MAX=20,SK_BODY=60000,SK_BUDGET=30000;
+let skills=[];try{skills=JSON.parse(localStorage.getItem(SKK)||'[]');if(!Array.isArray(skills))skills=[];}catch(e){skills=[];}
+function skSave(){try{localStorage.setItem(SKK,JSON.stringify(skills));return true;}catch(e){return false;}}
+function skParse(text,fallback){
+  text=String(text).replace(/^﻿/,'').replace(/\r/g,'');
+  let name='',desc='',body=text;
+  const m=text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  if(m){
+    body=m[2];
+    const L=m[1].split('\n');
+    for(let i=0;i<L.length;i++){
+      const kv=L[i].match(/^(name|description)\s*:\s*(.*)$/i);if(!kv)continue;
+      let v=kv[2].trim();
+      if(/^[>|][+-]?$/.test(v)){v='';while(i+1<L.length&&/^\s+\S/.test(L[i+1]))v+=(v?' ':'')+L[++i].trim();}
+      else while(i+1<L.length&&/^\s+\S/.test(L[i+1])&&!/^\s*\w[\w-]*\s*:/.test(L[i+1]))v+=' '+L[++i].trim();
+      v=v.replace(/^(["'])([\s\S]*)\1$/,'$2');
+      if(kv[1].toLowerCase()==='name')name=v;else desc=v;
+    }
+  }
+  if(!name){const h=body.match(/^#\s+(.+)$/m);name=h?h[1].trim():fallback;}
+  if(!desc){const p=body.split(/\n\s*\n/).map(x=>x.replace(/^#+\s.*$/mg,'').trim()).find(x=>x&&!/^```/.test(x));desc=p?p.replace(/\s+/g,' ').slice(0,200):'';}
+  return {name:name.slice(0,60)||'skill',desc:desc.slice(0,400),body:body.trim()};
+}
+/* pembaca zip kecil (stored + deflate) supaya paket skill .zip / .skill bisa diunggah langsung */
+async function unzip(buf){
+  const dv=new DataView(buf),u8=new Uint8Array(buf);let e=-1;
+  for(let i=buf.byteLength-22;i>=Math.max(0,buf.byteLength-66000);i--){if(dv.getUint32(i,true)===0x06054b50){e=i;break;}}
+  if(e<0)throw new Error('File zip tidak valid.');
+  const n=dv.getUint16(e+10,true);let p=dv.getUint32(e+16,true);const out=[],dec=new TextDecoder();
+  for(let k=0;k<n;k++){
+    if(dv.getUint32(p,true)!==0x02014b50)break;
+    const meth=dv.getUint16(p+10,true),cs=dv.getUint32(p+20,true),us=dv.getUint32(p+24,true),nl=dv.getUint16(p+28,true),el=dv.getUint16(p+30,true),cl=dv.getUint16(p+32,true),off=dv.getUint32(p+42,true);
+    const name=dec.decode(u8.subarray(p+46,p+46+nl));p+=46+nl+el+cl;
+    if(name.endsWith('/')||us>400000||!/\.(md|markdown|txt)$/i.test(name))continue;
+    const ds=off+30+dv.getUint16(off+26,true)+dv.getUint16(off+28,true),raw=u8.subarray(ds,ds+cs);
+    let data;
+    if(meth===0)data=raw;
+    else if(meth===8){
+      if(typeof DecompressionStream==='undefined')throw new Error('Browser ini belum bisa membuka zip. Unggah SKILL.md langsung.');
+      data=new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+    }else continue;
+    out.push({name,text:dec.decode(data)});
+  }
+  return out;
+}
+async function skFromFile(f){
+  const base=f.name.replace(/\.[^.]+$/,'');
+  if(/\.(zip|skill)$/i.test(f.name)){
+    const files=await unzip(await f.arrayBuffer());
+    const main=files.filter(x=>/(^|\/)SKILL\.md$/i.test(x.name)).sort((p,q)=>p.name.split('/').length-q.name.split('/').length)[0];
+    if(!main)throw new Error('Tidak ada SKILL.md di dalam '+f.name+'.');
+    const sk=skParse(main.text,base),dir=main.name.replace(/SKILL\.md$/i,'');
+    let extra='';
+    files.filter(x=>x!==main&&x.name.startsWith(dir)).slice(0,12).forEach(x=>{if(extra.length<20000)extra+='\n\n## Berkas: '+x.name.slice(dir.length)+'\n'+x.text.slice(0,8000);});
+    sk.body=(sk.body+extra).trim();return sk;
+  }
+  if(f.size>400000)throw new Error(f.name+' terlalu besar (maks 400 KB).');
+  return skParse(await f.text(),base);
+}
+function skAdd(sk){
+  if(!sk.body)throw new Error('Isi skill kosong.');
+  if(skills.length>=SK_MAX)throw new Error('Maksimal '+SK_MAX+' skill. Hapus yang tidak dipakai.');
+  let cut=false;if(sk.body.length>SK_BODY){sk.body=sk.body.slice(0,SK_BODY);cut=true;}
+  const old=skills.findIndex(x=>x.name.toLowerCase()===sk.name.toLowerCase());
+  const rec={id:'k'+Date.now()+Math.floor(Math.random()*1e3),name:sk.name,desc:sk.desc,body:sk.body,agent:'all',on:true};
+  if(old>=0){rec.agent=skills[old].agent;skills[old]=rec;}else skills.push(rec);
+  if(!skSave()){if(old<0)skills.pop();throw new Error('Penyimpanan browser penuh. Hapus skill lain dulu.');}
+  skCount();addMsg(boss,'Skill '+(old>=0?'diperbarui: ':'ditambahkan: ')+sk.name,'sys',Date.now(),true);
+  return cut;
+}
+function skCount(){$('#scount').textContent=String(skills.filter(x=>x.on).length);}
+function skPrompt(a,prompt){
+  const mine=skills.filter(k=>k.on&&(k.agent==='all'||k.agent===a.id));
+  if(!mine.length)return '';
+  const words=new Set(String(prompt).toLowerCase().split(/[^a-z0-9À-ɏ]+/).filter(w=>w.length>=4));
+  const low=String(prompt).toLowerCase();
+  const sc=k=>{let n=low.includes(k.name.toLowerCase())?10:0;(k.name+' '+k.desc).toLowerCase().split(/[^a-z0-9À-ɏ]+/).forEach(w=>{if(w.length>=4&&words.has(w))n++;});return n;};
+  const ranked=mine.map(k=>({k,n:sc(k)})).sort((p,q)=>q.n-p.n);
+  let budget=SK_BUDGET,o='\n\nSKILL dari CEO (panduan kerja tambahan). Pakai yang relevan dengan permintaan dan ikuti instruksinya dengan setia; abaikan yang tidak relevan.';
+  ranked.forEach(({k})=>{
+    o+='\n\n### SKILL: '+k.name+(k.desc?'\nKapan dipakai: '+k.desc:'');
+    if(k.body.length<=budget){o+='\n\n'+k.body;budget-=k.body.length;}
+    else o+='\n(isi lengkap tidak dimuat karena batas panjang)';
+  });
+  return o;
+}
+function skRender(){
+  const box=$('#sklist');box.replaceChildren();
+  if(!skills.length){const p=document.createElement('p');p.className='note';p.textContent='Belum ada skill. Unggah file SKILL.md untuk mengajari agen cara kerja tertentu, misalnya gaya penulisan, checklist QA, atau standar desain.';box.append(p);}
+  skills.forEach(k=>{
+    const d=document.createElement('div');d.className='sk'+(k.on?'':' off');
+    const h=document.createElement('div');h.className='sh';
+    const nm=document.createElement('b');nm.textContent=k.name;
+    const sel=document.createElement('select');sel.setAttribute('aria-label','Dipakai oleh');
+    [['all','Semua agen']].concat(AIS.map(a=>[a.id,a.name])).forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;if(k.agent===v)o.selected=true;sel.append(o);});
+    sel.addEventListener('change',()=>{k.agent=sel.value;skSave();});
+    const tg=mini(k.on?'Aktif':'Mati',()=>{k.on=!k.on;skSave();skCount();skRender();},k.on);tg.setAttribute('aria-pressed',String(k.on));
+    const rm=mini('Hapus',()=>{skills=skills.filter(x=>x!==k);skSave();skCount();skRender();});
+    h.append(nm,sel,tg,rm);
+    const p=document.createElement('p');p.textContent=(k.desc||'(tanpa deskripsi)')+' · '+Math.round(k.body.length/100)/10+' rb karakter';
+    d.append(h,p);box.append(d);
+  });
+}
+function skStat(t,c){const e=$('#skstat');e.textContent=t;e.className='stat'+(c?' '+c:'');}
+function openSkills(){skStat('','');skRender();$('#gskill').hidden=false;}
+$('#sbtn').addEventListener('click',openSkills);
+$('#skup').addEventListener('click',()=>$('#skfile').click());
+$('#skpaste').addEventListener('click',()=>{const b=$('#skbox');b.hidden=!b.hidden;if(!b.hidden)$('#sktxt').focus();});
+$('#skadd').addEventListener('click',()=>{
+  try{const t=$('#sktxt').value;if(!t.trim())throw new Error('Tempel isi skill dulu.');const cut=skAdd(skParse(t,'skill-'+(skills.length+1)));$('#sktxt').value='';$('#skbox').hidden=true;skRender();skStat(cut?'Ditambahkan, tetapi dipotong sampai 60.000 karakter.':'Skill ditambahkan.',cut?'warn':'ok');}
+  catch(e){skStat(e.message,'err');}
+});
+$('#skfile').addEventListener('change',async e=>{
+  const fs=[...e.target.files];e.target.value='';let ok=0,errs=[],cut=false;
+  for(const f of fs){try{cut=skAdd(await skFromFile(f))||cut;ok++;}catch(er){errs.push(er.message);}}
+  skRender();
+  skStat((ok?ok+' skill ditambahkan.':'')+(cut?' Sebagian dipotong sampai 60.000 karakter.':'')+(errs.length?' '+errs.join(' '):''),errs.length?(ok?'warn':'err'):'ok');
+});
+skCount();
+
 function htmlOf(t){const m=t.match(/```html[^\n]*\n([\s\S]*?)```/i)||t.match(/```html[^\n]*\n([\s\S]*)$/i);return m?m[1].trim():'';}
 
 /* panggilan API */
@@ -2464,7 +2606,7 @@ async function gErr0(res){
 const NETERR='Tidak bisa menghubungi Google. Periksa koneksi internet, VPN, atau ekstensi pemblokir.';
 async function gStream1(a,prompt,task,signal,onText,model){
  const h=hist[a.id]=hist[a.id]||[];
- const body={systemInstruction:{parts:[{text:sysPrompt(a,task)}]},contents:h.concat([{role:'user',parts:[{text:prompt}]}]),generationConfig:{temperature:task?.7:.9,maxOutputTokens:task?16384:8192}};
+ const body={systemInstruction:{parts:[{text:sysPrompt(a,task,prompt)}]},contents:h.concat([{role:'user',parts:[{text:prompt}]}]),generationConfig:{temperature:task?.7:.9,maxOutputTokens:task?16384:8192}};
  let res;
  try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':streamGenerateContent?alt=sse',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify(body)});}
  catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error(NETERR+(e&&e.message?' ('+e.message+')':''));er.net=1;throw er;}
@@ -2504,7 +2646,7 @@ async function gStream1(a,prompt,task,signal,onText,model){
 }
 async function gOnce(a,prompt,task,signal,model){
  const h=hist[a.id]=hist[a.id]||[];
- const body={systemInstruction:{parts:[{text:sysPrompt(a,task)}]},contents:h.concat([{role:'user',parts:[{text:prompt}]}]),generationConfig:{temperature:task?.7:.9,maxOutputTokens:task?16384:8192}};
+ const body={systemInstruction:{parts:[{text:sysPrompt(a,task,prompt)}]},contents:h.concat([{role:'user',parts:[{text:prompt}]}]),generationConfig:{temperature:task?.7:.9,maxOutputTokens:task?16384:8192}};
  let res;
  try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify(body)});}
  catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error(NETERR);er.net=1;throw er;}
@@ -2769,9 +2911,10 @@ $('#form').addEventListener('submit',e=>{
   const inp=$('#inp'),txt=inp.value.trim();if(!txt)return;
   inp.value='';
   addMsg(boss,txt,'',Date.now(),true);beep();
-  if(/^\/help$/i.test(txt)){addMsg(boss,'Perintah:\n/gambar <deskripsi> membuat gambar atau foto (butuh Gemini)\n/tugas <perintah> memberi tugas ke agen. Agen mengajukan rencana (dan usulan yang lebih berguna bila ada), dikerjakan setelah Anda setujui; hasilnya muncul di chat dan tombol HASIL\n@Einstein, @DeepSeek, @Doraemon bicara langsung\n/gemini pengaturan API key\n/hasil riwayat hasil\n/reset hapus ingatan percakapan agen\n/status papan tugas\n/adzan reset hapus file adzan\nShift+Enter untuk baris baru.','hint');return;}
+  if(/^\/help$/i.test(txt)){addMsg(boss,'Perintah:\n/skill membuka pengelola skill (unggah SKILL.md atau zip)\n/gambar <deskripsi> membuat gambar atau foto (butuh Gemini)\n/tugas <perintah> memberi tugas ke agen. Agen mengajukan rencana (dan usulan yang lebih berguna bila ada), dikerjakan setelah Anda setujui; hasilnya muncul di chat dan tombol HASIL\n@Einstein, @DeepSeek, @Doraemon bicara langsung\n/gemini pengaturan API key\n/hasil riwayat hasil\n/reset hapus ingatan percakapan agen\n/status papan tugas\n/adzan reset hapus file adzan\nShift+Enter untuk baris baru.','hint');return;}
   if(/^\/gemini$/i.test(txt)){openSet();return;}
   if(/^\/hasil$/i.test(txt)){openList();return;}
+  if(/^\/skills?$/i.test(txt)){openSkills();return;}
   if(/^\/reset$/i.test(txt)){hist={};addMsg(boss,'Ingatan percakapan agen dihapus.','sys');return;}
   if(/^\/adzan\s+reset$/i.test(txt)){useAdhanBlob(null);try{IDB.set(null);}catch(_){}addMsg(boss,'File adzan dihapus, kembali ke suara bawaan.','sys');return;}
   if(/^\/status$/i.test(txt)){const c=counts();addMsg(boss,`TODO ${c[0]} · DOING ${c[1]} · DONE ${c[2]}`,'sys');return;}
