@@ -158,6 +158,12 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
 .stat{font-size:12px;min-height:18px;margin:4px 0 0;color:var(--muted);overflow-wrap:anywhere}
 .stat.ok{color:var(--ok)}.stat.err{color:#ff8f86}.stat.warn{color:#f4b26a}
 .tabs{display:flex;gap:6px;margin:0 0 12px}
+.pv{margin-top:8px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+.pv iframe{display:block;width:100%;height:300px;border:0;background:#fff}
+.pv .cap{font:10px 'Silkscreen',monospace;letter-spacing:.06em;padding:5px 8px;background:rgba(255,255,255,.06);color:#9aa4bd;text-transform:uppercase}
+.gimgs{display:grid;gap:8px;margin-top:8px}
+.gimg{display:block;width:100%;height:auto;border-radius:8px;border:1px solid var(--line);background:#0b0d14;cursor:zoom-in}
+#rbody .gimgs{margin:0 0 12px}
 .frame{display:block;width:100%;height:62vh;border:1px solid var(--line);border-radius:8px;background:#fff}
 .it{display:block;width:100%;text-align:left;background:#10121a;border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin:0 0 8px;color:inherit;font:inherit;cursor:pointer}
 .it:hover{border-color:#343947;background:#151826}
@@ -2278,7 +2284,8 @@ const GM={key:'',model:'gemini-flash-latest'};
 try{const g=JSON.parse(localStorage.getItem(GSK)||'{}');GM.key=String(g.key||'').replace(/[^\x21-\x7E]/g,'');GM.model=g.model||GM.model;}catch(e){}
 function gSave(){try{localStorage.setItem(GSK,JSON.stringify({key:GM.key,model:GM.model}));}catch(e){}}
 let results=[];try{results=JSON.parse(localStorage.getItem(RSK)||'[]');if(!Array.isArray(results))results=[];}catch(e){results=[];}
-function rSave(){try{localStorage.setItem(RSK,JSON.stringify(results.slice(-30)));}catch(e){try{results=results.slice(-8);localStorage.setItem(RSK,JSON.stringify(results));}catch(_){}}}
+function rSer(list){let used=0;return list.slice().reverse().map(r=>{if(!r.imgs)return r;const n=r.imgs.reduce((q,u)=>q+u.length,0);if(used+n>1500000)return Object.assign({},r,{imgs:undefined,imgLost:true});used+=n;return r;}).reverse();}
+function rSave(){try{localStorage.setItem(RSK,JSON.stringify(rSer(results.slice(-30))));}catch(e){try{results=results.slice(-8);localStorage.setItem(RSK,JSON.stringify(rSer(results).map(r=>Object.assign({},r,{imgs:undefined}))));}catch(_){}}}
 let hist={},lastAg=null,hintedKey=false;
 const PERSONA={
  claude:'Kamu Einstein, Engineer senior di Agent Office. Gaya: teliti, logis, praktis. Keahlian: kode, arsitektur, debugging, API, data.',
@@ -2313,7 +2320,7 @@ async function proposeTask(who,full,ut){
     ut.ap='ok';ut.at=Date.now();save();refreshTasks(Date.now());
     acts.textContent=label;
     addMsg(boss,'Disetujui: '+title+(prompt!==full?' (sesuai usulan)':''),'sys',Date.now(),true);
-    if(GM.key)gemRun(who,prompt,true,ut);else speak(who,'Siap, mulai dikerjakan.',Date.now(),true);
+    if(GM.key)gemRun(who,prompt,true,ut,isImgReq(full)?'img':undefined);else if(isImgReq(full))speak(who,'Saya butuh Gemini untuk membuat gambarnya. Hubungkan GEMINI dulu ya.',Date.now(),true);else speak(who,'Siap, mulai dikerjakan.',Date.now(),true);
   };
   const no=()=>{
     if(ut.ap!=='pending')return;
@@ -2329,7 +2336,7 @@ async function proposeTask(who,full,ut){
 function pickAgent(txt){
  const m=AIS.find(a=>new RegExp('@'+a.name,'i').test(txt));if(m)return m;
  const s=txt.toLowerCase();
- if(/desain|warna|tampilan|\bui\b|\bux\b|layout|logo|landing|css|figma|mockup/.test(s))return byId('nova');
+ if(/gambar|foto|ilustrasi|poster|maskot|desain|warna|tampilan|\bui\b|\bux\b|layout|logo|landing|css|figma|mockup/.test(s))return byId('nova');
  if(/\btes\b|test|\bqa\b|\bbug\b|\buji\b|regresi|skenario/.test(s))return byId('bolt');
  return lastAg||byId('claude');
 }
@@ -2402,6 +2409,39 @@ function mdRender(src){
   list=null;para.push(ln.trim());i++;
  }
  fp();return root;
+}
+/* ---------- gambar: dibuat lewat model gambar Gemini ---------- */
+const IMGM=['gemini-2.5-flash-image','gemini-2.0-flash-preview-image-generation'];
+function isImgReq(t){return /^\s*gambar(kan)?\s/i.test(t)||/\b(buat|bikin|buatkan|bikinkan|generate|hasilkan|lukis|lukiskan|gambarkan|desain|desainkan|cetak)\w*\b[^\n]{0,40}\b(gambar|foto|ilustrasi|poster|logo|maskot|wallpaper|ikon|sketsa|lukisan|banner|sampul)\b/i.test(t);}
+function imgNodes(rec){
+  const box=document.createElement('div');box.className='gimgs';
+  (rec.imgs||[]).forEach((u,i)=>{
+    const im=document.createElement('img');im.className='gimg';im.alt='Gambar hasil '+(i+1);im.src=u;im.title='Klik untuk membuka ukuran penuh';
+    im.addEventListener('click',()=>{const w=open();if(w){w.document.write('<title>Gambar</title><body style="margin:0;background:#111;display:grid;place-items:center;min-height:100vh"><img src="'+u+'" style="max-width:100%;max-height:100vh">');w.document.close();}});
+    box.append(im);
+  });
+  return box;
+}
+function dlImg(u,name){const a=document.createElement('a');a.href=u;a.download=name;document.body.append(a);a.click();a.remove();}
+async function gImage(a,prompt,signal){
+  let lastErr=null;
+  for(const model of IMGM){
+    let res;
+    try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{responseModalities:['TEXT','IMAGE']}})});}
+    catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error(NETERR);er.net=1;throw er;}
+    if(!res.ok){const er=new Error(await gErr(res));er.code=res.status;lastErr=er;if(res.status===404||res.status===400)continue;throw er;}
+    const j=await res.json(),c=j.candidates&&j.candidates[0];
+    let text='';const imgs=[];
+    if(c&&c.content&&c.content.parts)c.content.parts.forEach(p=>{
+      if(p.text&&!p.thought)text+=p.text;
+      const d=p.inlineData||p.inline_data;
+      if(d&&d.data)imgs.push('data:'+(d.mimeType||d.mime_type||'image/png')+';base64,'+d.data);
+    });
+    if(imgs.length)return {text:text.trim(),imgs,finish:(c&&c.finishReason)||''};
+    lastErr=new Error('Model tidak mengembalikan gambar'+(text?': '+text.slice(0,200):' (mungkin ditolak oleh kebijakan konten). Coba ubah deskripsinya.'));
+    break;
+  }
+  throw lastErr||new Error('Pembuatan gambar gagal.');
 }
 function htmlOf(t){const m=t.match(/```html[^\n]*\n([\s\S]*?)```/i)||t.match(/```html[^\n]*\n([\s\S]*)$/i);return m?m[1].trim():'';}
 
@@ -2536,7 +2576,8 @@ async function gModels(){
 }
 
 /* menjalankan perintah lewat agen */
-async function gemRun(a,prompt,task,ut){
+async function gemRun(a,prompt,task,ut,mode){
+ const img=mode==='img';
  lastAg=a;a.busy=(a.busy||0)+1;
  const tkSet=(st,ow)=>{if(!ut)return;ut.st=st;ut.ow=ow;if(st===2)ut.dt=Date.now();save();refreshTasks(Date.now());};
  tkSet(1,a.id);
@@ -2546,18 +2587,19 @@ async function gemRun(a,prompt,task,ut){
  const ac=new AbortController();
  acts.append(mini('Hentikan',()=>ac.abort()));
  let streaming=false,cur='',raf=0;
- const keep=()=>{if(a.bubble&&/^Mencoba/.test(a.bubble.text))return;a.bubble={text:streaming?'Menulis…':'Berpikir…',ttl:1.4};};
+ const keep=()=>{if(a.bubble&&/^Mencoba/.test(a.bubble.text))return;a.bubble={text:img?'Membuat gambar…':streaming?'Menulis…':'Berpikir…',ttl:1.4};};
  keep();const bt=setInterval(keep,700);
  const paint=()=>{raf=0;const near=msgs.scrollHeight-msgs.scrollTop-msgs.clientHeight<90;r.tx.classList.remove('wait');r.tx.replaceChildren(mdRender(cur));if(near)msgs.scrollTop=msgs.scrollHeight;};
  try{
-  const out=await gStream(a,prompt,task,ac.signal,t=>{streaming=true;cur=t;if(!raf)raf=requestAnimationFrame(paint);},m=>{if(!cur){r.tx.classList.add('wait');r.tx.textContent=m;}a.bubble={text:'Mencoba lagi…',ttl:1.4};});
+  if(img){r.tx.classList.add('wait');r.tx.textContent='Sedang membuat gambar…';}
+  const out=img?await gImage(a,prompt,ac.signal):await gStream(a,prompt,task,ac.signal,t=>{streaming=true;cur=t;if(!raf)raf=requestAnimationFrame(paint);},m=>{if(!cur){r.tx.classList.add('wait');r.tx.textContent=m;}a.bubble={text:'Mencoba lagi…',ttl:1.4};});
   if(raf)cancelAnimationFrame(raf);
-  let text=out.text;
+  let text=out.text||(img?'Gambarnya sudah jadi, silakan dilihat.':'');
   if(out.finish==='MAX_TOKENS')text+='\n\n_(Jawaban terpotong karena mencapai batas panjang. Minta agen melanjutkan.)_';
   const h=hist[a.id]=hist[a.id]||[];
   h.push({role:'user',parts:[{text:prompt}]},{role:'model',parts:[{text:text.slice(0,6000)}]});
   while(h.length>16)h.splice(0,2);
-  const rec={id:'r'+t0,t:t0,agent:a.id,prompt,text,task:!!task};
+  const rec={id:'r'+t0,t:t0,agent:a.id,prompt,text,task:!!task,imgs:out.imgs};
   results.push(rec);rSave();gCount();
   const flat=text.replace(/\s+/g,' ');
   log.push({t:Date.now(),id:a.id,text:flat.slice(0,220)+(flat.length>220?'… (selengkapnya di tombol HASIL)':''),sys:''});save();
@@ -2573,20 +2615,31 @@ async function gemRun(a,prompt,task,ut){
   else{
    const msg=(e&&e.message)||'Terjadi kesalahan.';
    r.tx.textContent=msg+(/API key|Akses ditolak|diblokir/.test(msg)?'':'\n\n(Sudah dicoba otomatis beberapa menit. Tekan Coba lagi bila internet sudah stabil.)');
-   acts.append(mini('Coba lagi',()=>{acts.remove();gemRun(a,prompt,task,ut);}));
+   acts.append(mini('Coba lagi',()=>{acts.remove();gemRun(a,prompt,task,ut,mode);}));
    if(/API key|Akses ditolak|Model "/.test(msg))acts.append(mini('Buka pengaturan',openSet));
   }
  }finally{
   a.busy=Math.max(0,(a.busy||1)-1);
   clearInterval(bt);
-  if(a.bubble&&/^(Berpikir|Menulis|Mencoba)/.test(a.bubble.text))a.bubble=null;
+  if(a.bubble&&/^(Berpikir|Menulis|Mencoba|Membuat)/.test(a.bubble.text))a.bubble=null;
  }
 }
 function finishRow(r,acts,rec){
  r.tx.className='tx ai';r.tx.replaceChildren(mdRender(rec.text));
  if(r.tx.scrollHeight>250)r.tx.classList.add('clamp');
  acts.replaceChildren(mini('Lihat hasil',()=>openRes(rec),1),mini('Salin',function(){copyTxt(rec.text,this);}));
- if(htmlOf(rec.text))acts.append(mini('Pratinjau',()=>openRes(rec,'prev')));
+ const hh=htmlOf(rec.text);
+ if(hh){
+  acts.append(mini('Layar penuh',()=>openRes(rec,'prev')));
+  const pv=document.createElement('div');pv.className='pv';
+  const f=document.createElement('iframe');f.title='Pratinjau langsung';f.setAttribute('sandbox','allow-scripts allow-forms allow-modals allow-popups');f.srcdoc=hh;
+  const cp=document.createElement('div');cp.className='cap';cp.textContent='Pratinjau langsung';
+  pv.append(cp,f);r.body.insertBefore(pv,acts);
+ }
+ if(rec.imgs&&rec.imgs.length){
+  r.body.insertBefore(imgNodes(rec),acts);
+  rec.imgs.forEach((u,i)=>acts.append(mini(rec.imgs.length>1?'Unduh gambar '+(i+1):'Unduh gambar',()=>dlImg(u,'gambar-'+rec.agent+'-'+hhmm(rec.t).replace(':','')+(rec.imgs.length>1?'-'+(i+1):'')+'.png'))));
+ }
  msgs.scrollTop=msgs.scrollHeight;
 }
 
@@ -2599,7 +2652,7 @@ function showTab(t){
  const b=$('#rbody');b.replaceChildren();
  $('#tabt').setAttribute('aria-pressed',String(t!=='prev'));$('#tabp').setAttribute('aria-pressed',String(t==='prev'));
  if(t==='prev'){const f=document.createElement('iframe');f.className='frame';f.title='Pratinjau hasil';f.setAttribute('sandbox','allow-scripts allow-forms allow-modals allow-popups');f.srcdoc=htmlOf(curRec.text);b.append(f);}
- else b.append(mdRender(curRec.text));
+ else{if(curRec.imgs&&curRec.imgs.length)b.append(imgNodes(curRec));else if(curRec.imgLost){const n=document.createElement('p');n.className='note';n.textContent='Gambar tidak tersimpan setelah halaman dimuat ulang (terlalu besar untuk penyimpanan browser).';b.append(n);}b.append(mdRender(curRec.text));}
 }
 function openRes(rec,tab){
  curRec=rec;const a=byId(rec.agent)||AG[1],hasH=!!htmlOf(rec.text);
@@ -2624,7 +2677,7 @@ function openList(){
   const s=document.createElement('span');s.textContent=new Date(rec.t).toLocaleString('id-ID',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+(rec.task?' · TUGAS':'');
   h.append(n,s);
   const p=document.createElement('div');p.className='itp';p.textContent=rec.prompt.slice(0,120);
-  const q=document.createElement('div');q.className='itq';q.textContent=rec.text.replace(/\s+/g,' ').slice(0,180);
+  const q=document.createElement('div');q.className='itq';q.textContent=(rec.imgs||rec.imgLost?'[gambar] ':'')+rec.text.replace(/\s+/g,' ').slice(0,180);
   b.append(h,p,q);b.addEventListener('click',()=>{$('#glist').hidden=true;openRes(rec);});
   box.append(b);
  });
@@ -2675,6 +2728,7 @@ $('#gclear').addEventListener('click',()=>{GM.key='';gSave();gUI();$('#gkey').va
  $('#form').addEventListener('submit',()=>setTimeout(grow,0));
  const add=(label,color,pre)=>{const b=document.createElement('button');b.type='button';b.className='chip';b.textContent=label;if(color)b.style.color=color;b.addEventListener('click',()=>{inp.value=pre+inp.value.replace(/^(@\S+|\/tugas)\s*/i,'');inp.focus();grow();});mn.append(b);};
  add('/tugas','','/tugas ');
+ add('/gambar','#e6c675','/gambar ');
  AIS.forEach(a=>add('@'+a.name,a.color,'@'+a.name+' '));
 }
 gUI();gCount();
@@ -2699,7 +2753,10 @@ function answer(a,txt){
 }
 function respond(txt,forced){
   if(!ai){if(GM.key)addMsg(byId('boss'),'AI sedang OFF, jadi agen tidak membalas. Nyalakan saklar AI di bagian atas chat.','hint');return;}
-  if(GM.key){gemRun(forced||pickAgent(txt),txt,false);return;}
+  const gm=txt.match(/^\/gambar\b\s*(.*)/i),wantImg=!!gm||isImgReq(txt);
+  if(gm&&!gm[1].trim()){addMsg(byId('boss'),'Contoh: /gambar kucing astronot di bulan, gaya pixel art','hint');return;}
+  if(wantImg&&!GM.key){addMsg(byId('boss'),'Membuat gambar atau foto butuh Gemini. Klik tombol GEMINI di bawah chat lalu masukkan API key.','hint');return;}
+  if(GM.key){gemRun(forced||(wantImg?byId('nova'):pickAgent(txt)),gm?gm[1].trim():txt,false,null,wantImg?'img':undefined);return;}
   if(!hintedKey){hintedKey=true;addMsg(byId('boss'),'Balasan ini masih simulasi. Klik tombol GEMINI di bawah chat lalu masukkan API key dari Google AI Studio agar agen menjawab sungguhan.','hint');}
   const m=AIS.find(a=>new RegExp('@'+a.name,'i').test(txt));
   const who=forced||m||pick(AIS);
@@ -2712,7 +2769,7 @@ $('#form').addEventListener('submit',e=>{
   const inp=$('#inp'),txt=inp.value.trim();if(!txt)return;
   inp.value='';
   addMsg(boss,txt,'',Date.now(),true);beep();
-  if(/^\/help$/i.test(txt)){addMsg(boss,'Perintah:\n/tugas <perintah> memberi tugas ke agen. Agen mengajukan rencana (dan usulan yang lebih berguna bila ada), dikerjakan setelah Anda setujui; hasilnya muncul di chat dan tombol HASIL\n@Einstein, @DeepSeek, @Doraemon bicara langsung\n/gemini pengaturan API key\n/hasil riwayat hasil\n/reset hapus ingatan percakapan agen\n/status papan tugas\n/adzan reset hapus file adzan\nShift+Enter untuk baris baru.','hint');return;}
+  if(/^\/help$/i.test(txt)){addMsg(boss,'Perintah:\n/gambar <deskripsi> membuat gambar atau foto (butuh Gemini)\n/tugas <perintah> memberi tugas ke agen. Agen mengajukan rencana (dan usulan yang lebih berguna bila ada), dikerjakan setelah Anda setujui; hasilnya muncul di chat dan tombol HASIL\n@Einstein, @DeepSeek, @Doraemon bicara langsung\n/gemini pengaturan API key\n/hasil riwayat hasil\n/reset hapus ingatan percakapan agen\n/status papan tugas\n/adzan reset hapus file adzan\nShift+Enter untuk baris baru.','hint');return;}
   if(/^\/gemini$/i.test(txt)){openSet();return;}
   if(/^\/hasil$/i.test(txt)){openList();return;}
   if(/^\/reset$/i.test(txt)){hist={};addMsg(boss,'Ingatan percakapan agen dihapus.','sys');return;}
