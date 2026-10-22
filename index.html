@@ -400,16 +400,18 @@ const TS=50000;
 const T_VERB=['Perbaiki','Rapikan','Tambah','Uji','Riset','Optimalkan','Tulis','Review'];
 const T_NOUN=['login','dashboard','halaman harga','API pembayaran','form daftar','notifikasi','pencarian','laporan mingguan','cache','onboarding'];
 let utasks=[];
+/* tugas dikerjakan bersama: pemilik + satu atau dua rekan */
+function pickTeam(ow,r){const o=AIS.filter(x=>x!==ow);if(r()<.5)o.reverse();return [ow.id].concat(o.slice(0,r()<.5?1:o.length).map(x=>x.id));}
 function autoTask(j){
   const r=mb(hs('task:'+j));
   const created=j*TS+r()*15000,pickAt=created+40000+r()*80000,doneAt=pickAt+40000+r()*60000;
   const ow=AIS[Math.floor(r()*AIS.length)];
-  return {id:'a'+j,text:pickR(T_VERB,r)+' '+pickR(T_NOUN,r),created,pickAt,doneAt,owner:ow.id};
+  return {id:'a'+j,text:pickR(T_VERB,r)+' '+pickR(T_NOUN,r),created,pickAt,doneAt,owner:ow.id,team:pickTeam(ow,r)};
 }
 function userTask(u){
   const r=mb(hs('ut:'+u.t+u.text));
   const pickAt=(u.at||u.t)+15000+r()*25000,ow=AIS[Math.floor(r()*AIS.length)];
-  return {id:'u'+u.t,text:u.text,created:u.t,pickAt,doneAt:pickAt+40000+r()*40000,owner:ow.id};
+  return {id:'u'+u.t,text:u.text,created:u.t,pickAt,doneAt:pickAt+40000+r()*40000,owner:ow.id,team:pickTeam(ow,r)};
 }
 function tasksBetween(t0,t1){
   const out=[],j0=Math.floor((t0-300000)/TS),j1=Math.floor(t1/TS);
@@ -2016,7 +2018,7 @@ function busyAbs(a,t0,t1){
   let iv=[];
   if(a.human){
     for(let b=Math.floor(t0/BL)-1;b<=Math.floor(t1/BL);b++){const r=mb(hs(a.id+'bz'+b)),s1=b*BL+40+r()*60,s2=b*BL+330+r()*50;iv.push([s1,s1+110+r()*80],[s2,s2+90+r()*70]);}
-  }else tasksBetween(t0*1000,t1*1000).forEach(k=>{if(k.owner===a.id)iv.push([k.pickAt/1000,k.doneAt/1000]);});
+  }else tasksBetween(t0*1000,t1*1000).forEach(k=>{if((k.team||[k.owner]).includes(a.id))iv.push([k.pickAt/1000,k.doneAt/1000]);});
   iv=iv.filter(x=>x[1]>t0&&x[0]<t1).sort((p,q)=>p[0]-q[0]);
   const out=[];
   iv.forEach(x=>{const l=out[out.length-1];if(l&&x[0]-l[1]<25)l[1]=Math.max(l[1],x[1]);else out.push([x[0],x[1]]);});
@@ -2332,11 +2334,11 @@ async function proposeTask(who,full,ut){
     who.bubble={text:'Menyusun usulan…',ttl:2};
     const out=await gemRun(who,'CEO memberi tugas: "'+full+'". JANGAN kerjakan dulu, tunggu persetujuan CEO. Balas maksimal 3 kalimat berisi rencana singkat pengerjaan. Jika ada cara yang lebih berguna daripada permintaan persis itu, tulis satu baris terpisah diawali "USULAN:" berisi alternatifnya. Jika permintaan sudah paling tepat, jangan tulis USULAN.',false);
     const mm=out&&out.match(/USULAN:\s*(.+)/i);if(mm)alt=mm[1].trim();
-    body=alt?'Usulan di atas lebih berguna menurut saya. Menunggu keputusan CEO.':'Menunggu persetujuan CEO sebelum mulai.';
+    body=(alt?'Usulan di atas lebih berguna menurut saya.':'')+'\nDikerjakan bersama tim: '+teamNames(teamOf(who))+'.\nMenunggu keputusan CEO.';
   }else{
     const h=hs('alt:'+ut.t+title);
     if(h%2===0)alt=ALTS[(h>>1)%ALTS.length]+'.';
-    body='Rencana untuk "'+title+'": kerjakan langsung, lalu lapor begitu selesai.'+(alt?'\nUsulan: sebelum itu, lebih berguna kalau saya '+alt:'')+'\nMenunggu keputusan CEO.';
+    body='Rencana untuk "'+title+'": kerjakan langsung, lalu lapor begitu selesai.'+(alt?'\nUsulan: sebelum itu, lebih berguna kalau saya '+alt:'')+'\nDikerjakan bersama tim: '+userTask(ut).team.map(id=>byId(id)).map(a=>a.name+' ('+ROLE[a.id][0]+')').join(', ')+'.\nMenunggu keputusan CEO.';
   }
   if(ut.ap!=='pending')return;
   const r=addMsg(who,body,'',Date.now(),true);
@@ -2347,7 +2349,7 @@ async function proposeTask(who,full,ut){
     ut.ap='ok';ut.at=Date.now();save();refreshTasks(Date.now());
     acts.textContent=label;
     addMsg(boss,'Disetujui: '+title+(prompt!==full?' (sesuai usulan)':''),'sys',Date.now(),true);
-    if(GM.key)gemRun(who,prompt,true,ut,isImgReq(full)?'img':undefined);else if(isImgReq(full))speak(who,'Saya butuh Gemini untuk membuat gambarnya. Hubungkan GEMINI dulu ya.',Date.now(),true);else speak(who,'Siap, mulai dikerjakan.',Date.now(),true);
+    if(GM.key&&!isImgReq(full))teamRun(who,full,ut,prompt!==full?alt:null);else if(GM.key)gemRun(who,prompt,true,ut,'img');else if(isImgReq(full))speak(who,'Saya butuh Gemini untuk membuat gambarnya. Hubungkan GEMINI dulu ya.',Date.now(),true);else speak(who,'Siap, mulai dikerjakan bersama tim.',Date.now(),true);
   };
   const no=()=>{
     if(ut.ap!=='pending')return;
@@ -2748,6 +2750,60 @@ async function gModels(){
 }
 
 /* menjalankan perintah lewat agen */
+const ROLE={claude:['Engineer','struktur dan logika kerja, komponen teknis penting, alur data, dan risiko teknis'],nova:['Desainer','arah visual: palet warna, tipografi, tata letak, gaya, dan teks atau microcopy'],bolt:['QA','kriteria penerimaan, kasus uji penting, dan risiko yang harus dipenuhi hasil']};
+const teamOf=lead=>[lead].concat(AIS.filter(x=>x!==lead));
+const teamNames=list=>list.map(a=>a.name+' ('+ROLE[a.id][0]+')').join(', ');
+const stripSk=t=>String(t).replace(/^\s*\[SKILL:[^\]\n]*\]\s*/i,'');
+/* satu langkah kerja tim: pesan di chat, tanpa masuk riwayat HASIL */
+async function gemStep(a,prompt,tag,ac){
+  a.busy=(a.busy||0)+1;
+  const r=addMsg(a,'Sedang berpikir…','',Date.now(),false);r.tx.classList.add('ai','wait');
+  const tg=document.createElement('div');tg.className='sktag';tg.textContent=tag;r.body.insertBefore(tg,r.tx);
+  let cur='',raf=0;
+  const paint=()=>{raf=0;r.tx.classList.remove('wait');r.tx.replaceChildren(mdRender(stripSk(cur).replace(/^\s*\[SKILL:[^\]\n]*$/i,'')));};
+  const bt=setInterval(()=>{a.bubble={text:tag.length>30?tag.slice(0,28)+'…':tag,ttl:1.4};},700);
+  try{
+    const out=await gStream(a,prompt,false,ac.signal,t=>{cur=t;if(!raf)raf=requestAnimationFrame(paint);},m=>{if(!cur)r.tx.textContent=m;});
+    if(raf)cancelAnimationFrame(raf);
+    const text=stripSk(out.text);
+    r.tx.className='tx ai';r.tx.replaceChildren(mdRender(text));
+    log.push({t:Date.now(),id:a.id,text:text.replace(/\s+/g,' ').slice(0,220),sys:''});save();
+    msgs.scrollTop=msgs.scrollHeight;
+    return text;
+  }catch(e){
+    if(raf)cancelAnimationFrame(raf);
+    r.tx.className='tx hint';r.tx.textContent=(e&&e.name==='AbortError')?'Dihentikan.':((e&&e.message)||'Langkah ini gagal.');
+    return null;
+  }finally{a.busy=Math.max(0,(a.busy||1)-1);clearInterval(bt);if(a.bubble&&a.bubble.text===tag)a.bubble=null;}
+}
+/* tugas dikerjakan bersama: rekan menyumbang, pemimpin menyusun, QA meninjau, lalu diperbaiki bila perlu */
+async function teamRun(lead,full,ut,alt){
+  const team=teamOf(lead),helpers=team.slice(1),ac=new AbortController(),names=teamNames(team);
+  team.forEach(a=>{a.busy=(a.busy||0)+1;});
+  ut.st=1;ut.ow=lead.id;save();refreshTasks(Date.now());
+  const st=addMsg(lead,'','sys',Date.now(),true),acts=document.createElement('div');acts.className='acts';st.body.append(acts);
+  const stage=t=>{st.tx.textContent='Tim bekerja bersama: '+names+'. '+t;};
+  acts.append(mini('Hentikan tim',()=>ac.abort()));
+  try{
+    const task=alt?full+'\n\nCatatan: CEO menyetujui usulan berikut, kerjakan sesuai usulan: '+alt:full;
+    stage('Tahap 1/3: rekan tim menyumbang sesuai keahlian.');
+    const notes=await Promise.all(helpers.map(h=>gemStep(h,'TIM sedang mengerjakan tugas dari CEO: "'+task+'".\nKamu '+ROLE[h.id][0]+' dalam tim ini; '+lead.name+' ('+ROLE[lead.id][0]+') yang menyusun hasil akhirnya. Tulis KONTRIBUSIMU saja (maksimal 150 kata, poin-poin) tentang '+ROLE[h.id][1]+'. Jangan menulis hasil akhir lengkap.','Kontribusi '+ROLE[h.id][0],ac)));
+    if(ac.signal.aborted){stage('Dihentikan.');return;}
+    const mem=helpers.map((h,i)=>notes[i]?'- '+h.name+' ('+ROLE[h.id][0]+'):\n'+notes[i]:'').filter(Boolean).join('\n\n');
+    stage('Tahap 2/3: '+lead.name+' menyusun hasil akhir.');
+    const meta={title:full.slice(0,120),team:names};
+    const result=await gemRun(lead,task+(mem?'\n\nMASUKAN REKAN TIM (integrasikan semuanya ke hasil akhir):\n'+mem:''),true,ut,undefined,meta);
+    if(!result||ac.signal.aborted){stage(result?'Dihentikan.':'Penyusunan hasil gagal.');return;}
+    const rv=helpers.find(h=>h.id==='bolt')||helpers[0];
+    stage('Tahap 3/3: '+rv.name+' meninjau hasil.');
+    const review=await gemStep(rv,'Tinjau hasil kerja tim untuk tugas CEO: "'+task+'".\n\nHASIL:\n'+result.slice(0,30000)+'\n\nBerikan review singkat (maksimal 120 kata): hal yang sudah baik dan masalah nyata yang harus diperbaiki (poin-poin). Akhiri dengan SATU baris persis: VERDICT: OK atau VERDICT: PERLU PERBAIKAN.','Review '+ROLE[rv.id][0],ac);
+    if(review&&/VERDICT:\s*PERLU PERBAIKAN/i.test(review)&&!ac.signal.aborted&&meta.rec){
+      stage('Perbaikan: '+lead.name+' memperbaiki hasil sesuai review.');
+      await gemRun(lead,'Ini PERBAIKAN atas hasil kerjamu sendiri berdasarkan review rekan tim.\nTugas CEO: "'+task+'"\n\nHasil sebelumnya:\n'+result.slice(0,40000)+'\n\nReview:\n'+review+'\n\nPerbaiki semua masalah yang disebut lalu berikan hasil lengkap yang sudah diperbarui.'+(htmlOf(result)?' Berikan SATU file HTML lengkap dalam satu blok ```html.':''),true,null,undefined,{title:'Perbaikan setelah review: '+full.slice(0,60),from:meta.rec,team:names});
+    }
+    stage('Selesai.');
+  }finally{team.forEach(a=>{a.busy=Math.max(0,(a.busy||1)-1);});acts.remove();}
+}
 async function gemRun(a,prompt,task,ut,mode,meta){
  const img=mode==='img';
  lastAg=a;a.busy=(a.busy||0)+1;
@@ -2774,6 +2830,7 @@ async function gemRun(a,prompt,task,ut,mode,meta){
   while(h.length>16)h.splice(0,2);
   const rec={id:'r'+t0,t:t0,agent:a.id,prompt:(meta&&meta.title)||prompt,text,task:!!task,imgs:out.imgs};
   if(usedSk.length)rec.skills=usedSk;
+  if(meta){meta.rec=rec;if(meta.team)rec.team=meta.team;}
   if(meta&&meta.from){rec.orig=meta.from.orig||meta.from.prompt;rec.v=(meta.from.v||1)+1;}
   results.push(rec);rSave();gCount();
   const flat=text.replace(/\s+/g,' ');
@@ -2801,6 +2858,7 @@ async function gemRun(a,prompt,task,ut,mode,meta){
 }
 function finishRow(r,acts,rec){
  r.tx.className='tx ai';r.tx.replaceChildren(mdRender(rec.text));
+ if(rec.team){const t=document.createElement('div');t.className='sktag';t.textContent='Dikerjakan bersama: '+rec.team;r.body.insertBefore(t,acts);}
  if(rec.skills&&rec.skills.length){const t=document.createElement('div');t.className='sktag';t.textContent='Skill dipakai: '+rec.skills.join(', ');r.body.insertBefore(t,acts);}
  if(r.tx.scrollHeight>250)r.tx.classList.add('clamp');
  let rvb=null;
@@ -2961,7 +3019,7 @@ $('#form').addEventListener('submit',e=>{
   const inp=$('#inp'),txt=inp.value.trim();if(!txt)return;
   inp.value='';
   addMsg(boss,txt,'',Date.now(),true);beep();
-  if(/^\/help$/i.test(txt)){addMsg(boss,'Perintah:\n/skill membuka pengelola skill (unggah SKILL.md atau zip)\n/gambar <deskripsi> membuat gambar atau foto (butuh Gemini)\n/tugas <perintah> memberi tugas ke agen. Agen mengajukan rencana (dan usulan yang lebih berguna bila ada), dikerjakan setelah Anda setujui; hasilnya muncul di chat dan tombol HASIL\n@Einstein, @DeepSeek, @Doraemon bicara langsung\n/gemini pengaturan API key\n/hasil riwayat hasil\n/reset hapus ingatan percakapan agen\n/status papan tugas\n/adzan reset hapus file adzan\nShift+Enter untuk baris baru.','hint');return;}
+  if(/^\/help$/i.test(txt)){addMsg(boss,'Perintah:\n/skill membuka pengelola skill (unggah SKILL.md atau zip)\n/gambar <deskripsi> membuat gambar atau foto (butuh Gemini)\n/tugas <perintah> memberi tugas ke seluruh tim (Einstein, DeepSeek, Doraemon bekerja bersama). Agen mengajukan rencana (dan usulan yang lebih berguna bila ada), dikerjakan setelah Anda setujui; hasilnya muncul di chat dan tombol HASIL\n@Einstein, @DeepSeek, @Doraemon bicara langsung\n/gemini pengaturan API key\n/hasil riwayat hasil\n/reset hapus ingatan percakapan agen\n/status papan tugas\n/adzan reset hapus file adzan\nShift+Enter untuk baris baru.','hint');return;}
   if(/^\/gemini$/i.test(txt)){openSet();return;}
   if(/^\/hasil$/i.test(txt)){openList();return;}
   if(/^\/skills?$/i.test(txt)){openSkills();return;}
@@ -3038,8 +3096,10 @@ function eventsBetween(t0,t1){
   }
   tasksBetween(t0,t1).forEach(k=>{
     const w=byId(k.owner);
+    const HELP={claude:'sisi teknis untuk',nova:'sisi desain untuk',bolt:'pengujian untuk'},tm=(k.team||[]).slice(1);
     if(k.pickAt>t0&&k.pickAt<=t1)ev.push({t:k.pickAt,who:w,text:`Mengambil tugas: ${k.text}.`});
-    if(k.doneAt>t0&&k.doneAt<=t1)ev.push({t:k.doneAt,who:w,text:`Selesai: ${k.text}.`});
+    tm.forEach((id,i)=>{const t=k.pickAt+4000+i*5000;if(t>t0&&t<=t1)ev.push({t,who:byId(id),text:`Ikut membantu ${w.name}: ${HELP[id]} ${k.text}.`});});
+    if(k.doneAt>t0&&k.doneAt<=t1)ev.push({t:k.doneAt,who:w,text:`Selesai: ${k.text}.`+(tm.length?` Dikerjakan bersama ${tm.map(id=>byId(id).name).join(' dan ')}.`:'')});
   });
   for(let b=Math.floor(t0/1000/BL);b<=Math.floor(t1/1000/BL);b++){const m=meetPlan(b);if(!m)continue;const w=byId(m.ids[0]);
     ev.push({t:(b*BL+m.t0)*1000,who:w,sys:1,text:`Rapat dimulai: ${m.topic} (${m.ids.map(i=>byId(i).name).join(', ')})`});
