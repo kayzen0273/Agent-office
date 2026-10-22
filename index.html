@@ -2443,6 +2443,28 @@ function mdRender(src){
 }
 /* ---------- gambar: dibuat lewat model gambar Gemini ---------- */
 const IMGM=['gemini-2.5-flash-image','gemini-2.0-flash-preview-image-generation'];
+/* model gambar dicari otomatis dari daftar model akun: yang mendukung generateContent dan bernama *image* */
+let imgList=null,imgListKey='',imgOK='';
+async function imgModelList(signal){
+  if(imgList&&imgListKey===GM.key)return imgList;
+  let found=[],ok=false;
+  try{
+    let tok='';
+    for(let k=0;k<4;k++){
+      const res=await fetch(GAPI+'models?pageSize=200'+(tok?'&pageToken='+encodeURIComponent(tok):''),{signal,headers:{'x-goog-api-key':GM.key}});
+      if(!res.ok)break;ok=true;
+      const j=await res.json();
+      (j.models||[]).forEach(m=>{const n=String(m.name||'').replace(/^models\//,'');if(/^gemini/.test(n)&&/image/.test(n)&&!/(tts|live|embed|audio|vision)/.test(n)&&(m.supportedGenerationMethods||[]).includes('generateContent'))found.push(n);});
+      tok=j.nextPageToken;if(!tok)break;
+    }
+  }catch(e){if(e&&e.name==='AbortError')throw e;ok=false;}
+  const ver=n=>{const m=n.match(/gemini-(\d+(?:\.\d+)?)/);return m?parseFloat(m[1]):0;};
+  const rank=n=>(/(preview|exp)/.test(n)?0:4)+(/flash/.test(n)?2:0);
+  found=[...new Set(found)].sort((p,q)=>rank(q)-rank(p)||ver(q)-ver(p));
+  if(!ok||!found.length&&!ok)found=IMGM.slice();
+  imgList=found;imgListKey=GM.key;
+  return found;
+}
 function isCarouselReq(t){return /\b(carousel|karusel)\b/i.test(t);}
 function isImgReq(t){return isCarouselReq(t)||/^\s*gambar(kan)?\s/i.test(t)||/\b(buat|bikin|buatkan|bikinkan|generate|hasilkan|lukis|lukiskan|gambarkan|desain|desainkan|cetak|rancang)\w*\b[^\n]{0,60}\b(gambar|foto|ilustrasi|poster|logo|maskot|wallpaper|ikon|sketsa|lukisan|banner|sampul|postingan|post|feed|story|stories|thumbnail|infografis|flyer|brosur|meme|stiker|konten visual)\b/i.test(t);}
 function inferRatio(t){return /\b(story|stories|reels|tiktok|status wa)\b/i.test(t)?'9:16':/\b(thumbnail|youtube|banner|wallpaper|header|presentasi)\b/i.test(t)?'16:9':/\b(post|postingan|feed|instagram|\big\b|carousel|karusel)\b/i.test(t)?'4:5':'';}
@@ -2459,11 +2481,14 @@ function imgNodes(rec){
 function dlImg(u,name){const a=document.createElement('a');a.href=u;a.download=name;document.body.append(a);a.click();a.remove();}
 async function gImage(a,prompt,signal,refs,opts){
   opts=opts||{};let lastErr=null;
-  for(const model of IMGM){
+  const all=await imgModelList(signal);
+  if(!all.length)throw new Error('Akun Google AI Studio Anda belum punya model Gemini yang bisa membuat gambar. Biasanya butuh paket berbayar atau akses model gambar di akun Anda.');
+  const models=imgOK&&all.includes(imgOK)?[imgOK].concat(all.filter(x=>x!==imgOK)):all;
+  for(const model of models){
     let res;
     try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify({contents:[{role:'user',parts:[{text:skPrompt(a,prompt,true)+prompt}].concat((refs||[]).slice(0,3).map(u=>{const m=/^data:(.+?);base64,(.*)$/.exec(u);return m?{inlineData:{mimeType:m[1],data:m[2]}}:null;}).filter(Boolean))}],generationConfig:Object.assign({responseModalities:['TEXT','IMAGE']},opts.ratio&&!opts.noRatio?{imageConfig:{aspectRatio:opts.ratio}}:{})})});}
     catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error(NETERR);er.net=1;throw er;}
-    if(!res.ok){const er=new Error(await gErr(res));er.code=res.status;lastErr=er;if(res.status===400&&opts.ratio&&!opts.noRatio)return gImage(a,prompt,signal,refs,Object.assign({},opts,{noRatio:1}));if(res.status===404||res.status===400)continue;throw er;}
+    if(!res.ok){const er=new Error(await gErr(res));er.code=res.status;lastErr=er;if(res.status===400&&opts.ratio&&!opts.noRatio)return gImage(a,prompt,signal,refs,Object.assign({},opts,{noRatio:1}));if(res.status===404||res.status===400||res.status===403||res.status===429){if(model!==models[models.length-1])continue;}throw er;}
     const j=await res.json(),c=j.candidates&&j.candidates[0];
     let text='';const imgs=[];
     if(c&&c.content&&c.content.parts)c.content.parts.forEach(p=>{
@@ -2471,7 +2496,7 @@ async function gImage(a,prompt,signal,refs,opts){
       const d=p.inlineData||p.inline_data;
       if(d&&d.data)imgs.push('data:'+(d.mimeType||d.mime_type||'image/png')+';base64,'+d.data);
     });
-    if(imgs.length)return {text:text.trim(),imgs,finish:(c&&c.finishReason)||''};
+    if(imgs.length){imgOK=model;return {text:text.trim(),imgs,finish:(c&&c.finishReason)||'',model};}
     if(!opts.retry&&!(signal&&signal.aborted))return gImage(a,'Hasilkan sebuah GAMBAR sekarang, bukan teks atau prompt. '+prompt,signal,refs,Object.assign({},opts,{retry:1}));
     lastErr=new Error('Model tidak mengembalikan gambar'+(text?': '+text.slice(0,200):' (mungkin ditolak oleh kebijakan konten). Coba ubah deskripsinya.'));
     break;
