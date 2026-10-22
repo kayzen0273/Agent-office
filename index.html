@@ -221,6 +221,7 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
       <button class="chip" id="gbtn" type="button" title="Hubungkan ke Gemini / Google AI Studio"><i id="gdot"></i>GEMINI</button>
       <button class="chip" id="rbtn" type="button" title="Riwayat hasil kerja agen">HASIL <b id="rcount">0</b></button>
       <button class="chip" id="sbtn" type="button" title="Unggah skill untuk agen">SKILL <b id="scount">0</b></button>
+      <button class="chip" id="sbbtn" type="button" title="Simpan dan sinkronkan data ke Supabase"><i id="sbdot"></i>SUPABASE</button>
       <span class="mn" id="mentions"></span>
       <span class="gs" id="gline"></span>
      </div>
@@ -270,6 +271,21 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
    <p class="stat" id="skstat" aria-live="polite"></p>
    <div id="sklist"></div>
   </div>
+ </div>
+</div>
+<div class="ov" id="gsb" hidden>
+ <div class="dlg sm" role="dialog" aria-modal="true" aria-labelledby="sbt">
+  <div class="dh"><h2 id="sbt">Supabase</h2><button class="mini" type="button" data-x>Tutup</button></div>
+  <div class="db">
+   <p class="note">Hasil kerja agen (termasuk gambar) dan skill disimpan di proyek Supabase Anda, jadi sama di semua perangkat. Buat proyek gratis di <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer">supabase.com</a>, jalankan SQL di bawah sekali di SQL Editor, lalu isi kolom ini. Yang dipakai adalah <b>anon key</b> (bukan service key).</p>
+   <details style="margin:0 0 12px"><summary style="cursor:pointer;font-size:12px;color:#7db4ff">Lihat SQL penyiapan</summary><pre id="sbsqlpre" style="white-space:pre-wrap;font:11px monospace;background:#0f1116;border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0;color:#c9d1e6;max-height:220px;overflow:auto"></pre><button class="mini" id="sbsql" type="button">Salin SQL</button></details>
+   <label class="fld"><span>Project URL</span><input id="sburl" autocomplete="off" spellcheck="false" placeholder="https://xxxx.supabase.co"></label>
+   <label class="fld"><span>Anon key</span><input id="sbkey" type="password" autocomplete="off" spellcheck="false" placeholder="eyJ..."></label>
+   <label class="fld"><span>Email</span><input id="sbemail" type="email" autocomplete="username" placeholder="email@contoh.com"></label>
+   <label class="fld"><span>Kata sandi (minimal 6 karakter, tidak disimpan di browser)</span><input id="sbpass" type="password" autocomplete="current-password"></label>
+   <p class="stat" id="sbstat" aria-live="polite"></p>
+  </div>
+  <div class="df"><button class="mini pri" id="sbin" type="button">Masuk</button><button class="mini" id="sbup" type="button">Daftar</button><button class="mini" id="sbsync" type="button">Sinkron sekarang</button><button class="mini" id="sbout" type="button">Keluar</button></div>
  </div>
 </div>
 <div class="ov" id="glist" hidden>
@@ -2316,7 +2332,7 @@ try{const g=JSON.parse(localStorage.getItem(GSK)||'{}');GM.key=String(g.key||'')
 function gSave(){try{localStorage.setItem(GSK,JSON.stringify({key:GM.key,model:GM.model}));}catch(e){}}
 let results=[];try{results=JSON.parse(localStorage.getItem(RSK)||'[]');if(!Array.isArray(results))results=[];}catch(e){results=[];}
 function rSer(list){let used=0;return list.slice().reverse().map(r=>{if(!r.imgs)return r;const n=r.imgs.reduce((q,u)=>q+u.length,0);if(used+n>1500000)return Object.assign({},r,{imgs:undefined,imgLost:true});used+=n;return r;}).reverse();}
-function rSave(){try{localStorage.setItem(RSK,JSON.stringify(rSer(results.slice(-30))));}catch(e){try{results=results.slice(-8);localStorage.setItem(RSK,JSON.stringify(rSer(results).map(r=>Object.assign({},r,{imgs:undefined}))));}catch(_){}}}
+function rSave(){sbSchedule();try{localStorage.setItem(RSK,JSON.stringify(rSer(results.slice(-30))));}catch(e){try{results=results.slice(-8);localStorage.setItem(RSK,JSON.stringify(rSer(results).map(r=>Object.assign({},r,{imgs:undefined}))));}catch(_){}}}
 let hist={},lastAg=null,hintedKey=false;
 const PERSONA={
  claude:'Kamu Einstein, Engineer senior di Agent Office. Gaya: teliti, logis, praktis. Keahlian: kode, arsitektur, debugging, API, data.',
@@ -2478,15 +2494,23 @@ function imgNodes(rec){
   });
   return box;
 }
-function dlImg(u,name){const a=document.createElement('a');a.href=u;a.download=name;document.body.append(a);a.click();a.remove();}
+async function dlImg(u,name){
+  try{if(!/^data:/.test(u)){const b=await (await fetch(u)).blob();u=URL.createObjectURL(b);}}catch(e){window.open(u,'_blank');return;}
+  const a=document.createElement('a');a.href=u;a.download=name;document.body.append(a);a.click();a.remove();
+}
+async function toInline(u){
+  const m=/^data:(.+?);base64,(.*)$/.exec(u);if(m)return {inlineData:{mimeType:m[1],data:m[2]}};
+  try{const b=await (await fetch(u)).blob();const d=await new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(b);});const mm=/^data:(.+?);base64,(.*)$/.exec(d);return mm?{inlineData:{mimeType:mm[1],data:mm[2]}}:null;}catch(e){return null;}
+}
 async function gImage(a,prompt,signal,refs,opts){
   opts=opts||{};let lastErr=null;
+  const refParts=(await Promise.all((refs||[]).slice(0,3).map(toInline))).filter(Boolean);
   const all=await imgModelList(signal);
   if(!all.length){const er=new Error('Akun Google AI Studio Anda belum punya model Gemini yang bisa membuat gambar. Biasanya butuh paket berbayar atau akses model gambar di akun Anda.');er.noModel=true;throw er;}
   const models=imgOK&&all.includes(imgOK)?[imgOK].concat(all.filter(x=>x!==imgOK)):all;
   for(const model of models){
     let res;
-    try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify({contents:[{role:'user',parts:[{text:skPrompt(a,prompt,true)+prompt}].concat((refs||[]).slice(0,3).map(u=>{const m=/^data:(.+?);base64,(.*)$/.exec(u);return m?{inlineData:{mimeType:m[1],data:m[2]}}:null;}).filter(Boolean))}],generationConfig:Object.assign({responseModalities:['TEXT','IMAGE']},opts.ratio&&!opts.noRatio?{imageConfig:{aspectRatio:opts.ratio}}:{})})});}
+    try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify({contents:[{role:'user',parts:[{text:skPrompt(a,prompt,true)+prompt}].concat(refParts)}],generationConfig:Object.assign({responseModalities:['TEXT','IMAGE']},opts.ratio&&!opts.noRatio?{imageConfig:{aspectRatio:opts.ratio}}:{})})});}
     catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error(NETERR);er.net=1;throw er;}
     if(!res.ok){const er=new Error(await gErr(res));er.code=res.status;const gl=gErr0.last||{};
       if(res.status===429&&!gl.zero&&gl.delay&&gl.delay<=20&&!opts.waited){await new Promise(r=>setTimeout(r,gl.delay*1000+300));return gImage(a,prompt,signal,refs,Object.assign({},opts,{waited:1}));}
@@ -2509,7 +2533,7 @@ async function gImage(a,prompt,signal,refs,opts){
 /* ---------- skill: diunggah CEO, dipakai agen lewat instruksi sistem ---------- */
 const SKK='agentOffice.skills.v1',SK_MAX=20,SK_BODY=60000,SK_BUDGET=30000;
 let skills=[];try{skills=JSON.parse(localStorage.getItem(SKK)||'[]');if(!Array.isArray(skills))skills=[];}catch(e){skills=[];}
-function skSave(){try{localStorage.setItem(SKK,JSON.stringify(skills));return true;}catch(e){return false;}}
+function skSave(){sbSchedule();try{localStorage.setItem(SKK,JSON.stringify(skills));return true;}catch(e){return false;}}
 function skParse(text,fallback){
   text=String(text).replace(/^﻿/,'').replace(/\r/g,'');
   let name='',desc='',body=text;
@@ -2650,6 +2674,167 @@ function reviseRun(rec,instr){
   addMsg(boss,'Revisi untuk '+a.name+': '+instr,'sys',Date.now(),true);
   gemRun(a,prompt,true,null,img?'img':undefined,{title:'Revisi: '+instr.slice(0,80),from:rec,refs:rec.imgs});
 }
+
+/* ---------- Supabase: simpan & sinkronkan hasil, gambar, dan skill (REST langsung, tanpa pustaka) ---------- */
+const SBK='agentOffice.supabase.v1',SBT='/rest/v1/office_data',SBB='agent-office';
+const SB_SQL=`create table if not exists public.office_data (
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  kind text not null,
+  id text not null,
+  data jsonb not null,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, kind, id)
+);
+alter table public.office_data enable row level security;
+create policy "data milik sendiri" on public.office_data
+  for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+insert into storage.buckets (id, name, public) values ('agent-office', 'agent-office', true)
+  on conflict (id) do nothing;
+create policy "unggah gambar sendiri" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'agent-office' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "ubah gambar sendiri" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'agent-office' and (storage.foldername(name))[1] = auth.uid()::text);`;
+let SB={url:'https://bcvjcobumvulyqqiuyjn.supabase.co',key:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjdmpjb2J1bXZ1bHlxcWl1eWpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2NTIzOTIsImV4cCI6MjEwODIyODM5Mn0.SjA5lEg4DYoJjKQlShEcmLNG8SwGQt3VAAmC1YmMuL4',sess:null};
+try{const g=JSON.parse(localStorage.getItem(SBK)||'{}');if(g.url)SB.url=String(g.url);if(g.key)SB.key=String(g.key).replace(/[^\x21-\x7E]/g,'');SB.sess=g.sess||null;}catch(e){}
+function sbPersist(){try{localStorage.setItem(SBK,JSON.stringify({url:SB.url,key:SB.key,sess:SB.sess}));}catch(e){}}
+const sbOn=()=>!!(SB.url&&SB.key&&SB.sess&&SB.sess.access_token);
+const sbKnown={skill:new Set(),result:new Set()};
+let sbTimer=0,sbBusy=false,sbMsg='';
+function sbStat(t,c){sbMsg=t;const e=$('#sbstat');if(e){e.textContent=t;e.className='stat'+(c?' '+c:'');}}
+function sbUI(){$('#sbdot').classList.toggle('on',sbOn());}
+async function sbErr(res){
+  let m='';try{const j=await res.json();m=j.message||j.msg||j.error_description||j.error||'';}catch(e){}
+  if(res.status===404||/relation|schema cache|does not exist|PGRST20/i.test(m))return 'Tabel belum dibuat. Jalankan SQL penyiapan di SQL Editor Supabase dulu.';
+  if(res.status===401||res.status===403)return 'Akses ditolak ('+res.status+'). Masuk ulang, atau periksa kebijakan (RLS) dari SQL penyiapan. '+String(m).slice(0,120);
+  return 'Supabase error '+res.status+(m?': '+String(m).slice(0,160):'');
+}
+async function sbAuth(path,body){
+  const res=await fetch(SB.url+'/auth/v1/'+path,{method:'POST',headers:{apikey:SB.key,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const j=await res.json().catch(()=>({}));
+  if(!res.ok)throw new Error(j.error_description||j.msg||j.message||('Gagal ('+res.status+')'));
+  return j;
+}
+function sbSetSess(j){
+  if(!j.access_token)return false;
+  SB.sess={access_token:j.access_token,refresh_token:j.refresh_token,exp:Date.now()+(j.expires_in||3600)*1000,uid:j.user&&j.user.id||(SB.sess&&SB.sess.uid),email:j.user&&j.user.email||(SB.sess&&SB.sess.email)};
+  sbPersist();return true;
+}
+async function sbRefresh(){
+  if(!SB.sess||!SB.sess.refresh_token)return false;
+  try{const j=await sbAuth('token?grant_type=refresh_token',{refresh_token:SB.sess.refresh_token});return sbSetSess(j);}catch(e){SB.sess=null;sbPersist();sbUI();return false;}
+}
+async function sbFetch(path,opts,retry){
+  if(SB.sess&&SB.sess.exp&&Date.now()>SB.sess.exp-60000)await sbRefresh();
+  if(!sbOn())throw new Error('Belum masuk ke Supabase.');
+  opts=opts||{};
+  const res=await fetch(SB.url+path,Object.assign({},opts,{headers:Object.assign({apikey:SB.key,Authorization:'Bearer '+SB.sess.access_token},opts.headers||{})}));
+  if(res.status===401&&retry!==false&&await sbRefresh())return sbFetch(path,opts,false);
+  return res;
+}
+async function sbUpsert(kind,items){
+  if(!items.length)return;
+  const rows=items.map(i=>({user_id:SB.sess.uid,kind,id:i.id,data:i.data,updated_at:new Date().toISOString()}));
+  const res=await sbFetch(SBT+'?on_conflict=user_id,kind,id',{method:'POST',headers:{'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(rows)});
+  if(!res.ok)throw new Error(await sbErr(res));
+}
+async function sbDelete(kind,id){
+  const res=await sbFetch(SBT+'?kind=eq.'+encodeURIComponent(kind)+'&id=eq.'+encodeURIComponent(id),{method:'DELETE'});
+  if(!res.ok)throw new Error(await sbErr(res));
+}
+async function sbUploadImg(dataUrl,name){
+  const blob=await (await fetch(dataUrl)).blob(),path=SB.sess.uid+'/'+name+'.png';
+  const res=await sbFetch('/storage/v1/object/'+SBB+'/'+path,{method:'POST',headers:{'Content-Type':blob.type||'image/png','x-upsert':'true'},body:blob});
+  if(!res.ok){const m=await sbErr(res);throw new Error(/Tabel belum/.test(m)?'Bucket gambar belum dibuat. Jalankan SQL penyiapan.':m);}
+  return SB.url+'/storage/v1/object/public/'+SBB+'/'+path;
+}
+function sbSchedule(){try{if(!sbOn())return;clearTimeout(sbTimer);sbTimer=setTimeout(sbFlush,1500);}catch(e){}}
+async function sbFlush(){
+  if(!sbOn())return;
+  if(sbBusy){clearTimeout(sbTimer);sbTimer=setTimeout(sbFlush,2000);return;}
+  sbBusy=true;let changed=false;
+  try{
+    const ski=skills.map(k=>({id:k.id,data:{id:k.id,name:k.name,desc:k.desc,body:k.body,agent:k.agent,on:k.on}}));
+    await sbUpsert('skill',ski);
+    for(const id of [...sbKnown.skill])if(!skills.some(k=>k.id===id)){await sbDelete('skill',id);sbKnown.skill.delete(id);}
+    ski.forEach(x=>sbKnown.skill.add(x.id));
+    for(const rec of results.slice()){
+      if(rec._sb)continue;
+      const copy=Object.assign({},rec);delete copy._sb;delete copy.imgLost;
+      if(rec.imgs&&rec.imgs.length)copy.imgs=await Promise.all(rec.imgs.map((u,i)=>/^data:/.test(u)?sbUploadImg(u,rec.id+'-'+i):u));
+      await sbUpsert('result',[{id:rec.id,data:copy}]);
+      rec._sb=true;sbKnown.result.add(rec.id);changed=true;
+    }
+    for(const id of [...sbKnown.result])if(!results.some(r=>r.id===id)){await sbDelete('result',id);sbKnown.result.delete(id);}
+    if(changed){try{localStorage.setItem(RSK,JSON.stringify(rSer(results.slice(-30))));}catch(e){}}
+    sbStat('Tersinkron '+new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})+' · '+SB.sess.email,'ok');
+  }catch(e){sbStat(e.message||'Sinkron gagal.','err');}
+  finally{sbBusy=false;}
+}
+async function sbPull(){
+  const res=await sbFetch(SBT+'?select=kind,id,data,updated_at&order=updated_at.asc&limit=2000');
+  if(!res.ok)throw new Error(await sbErr(res));
+  const rows=await res.json();let added=0;
+  rows.forEach(row=>{
+    const d=row.data||{};
+    if(row.kind==='skill'){
+      sbKnown.skill.add(row.id);
+      const rec={id:row.id,name:d.name,desc:d.desc||'',body:d.body||'',agent:d.agent||'all',on:d.on!==false};
+      const i=skills.findIndex(k=>k.id===row.id);
+      if(i<0){skills.push(rec);added++;}else skills[i]=rec;
+    }else if(row.kind==='result'){
+      sbKnown.result.add(row.id);
+      const have=results.find(r=>r.id===row.id);
+      if(have)have._sb=true;else{results.push(Object.assign({},d,{_sb:true}));added++;}
+    }
+  });
+  results.sort((p,q)=>p.t-q.t);
+  try{localStorage.setItem(SKK,JSON.stringify(skills));}catch(e){}
+  try{localStorage.setItem(RSK,JSON.stringify(rSer(results.slice(-30))));}catch(e){}
+  skCount();gCount();
+  return added;
+}
+async function sbSync(){
+  if(!sbOn())return;
+  sbStat('Menyinkronkan…','');
+  try{await sbFlush();const n=await sbPull();if(n&&sbMsg.indexOf('Tersinkron')===0)sbStat(sbMsg+' · '+n+' item dari perangkat lain','ok');}
+  catch(e){sbStat(e.message||'Sinkron gagal.','err');}
+}
+function sbOpen(){
+  $('#sburl').value=SB.url;$('#sbkey').value=SB.key;$('#sbemail').value=(SB.sess&&SB.sess.email)||$('#sbemail').value;$('#sbpass').value='';
+  $('#sbsqlpre').textContent=SB_SQL;
+  if(!sbMsg)sbStat(sbOn()?'Masuk sebagai '+SB.sess.email:'Belum masuk.','');
+  $('#gsb').hidden=false;
+}
+function sbReadForm(){
+  let u=$('#sburl').value.trim().replace(/\/+$/,''),k=$('#sbkey').value.replace(/[^\x21-\x7E]/g,'');
+  if(!/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)$/i.test(u)&&!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(u))throw new Error('Project URL harus berbentuk https://xxxx.supabase.co');
+  if(k.length<20)throw new Error('Anon key belum diisi.');
+  if(SB.url!==u||SB.key!==k)SB.sess=null;
+  SB.url=u;SB.key=k;
+  return {email:$('#sbemail').value.trim(),password:$('#sbpass').value};
+}
+async function sbLogin(signup){
+  try{
+    const {email,password}=sbReadForm();
+    if(!email||password.length<6)throw new Error('Isi email dan kata sandi (minimal 6 karakter).');
+    sbStat(signup?'Mendaftar…':'Masuk…','');
+    const j=signup?await sbAuth('signup',{email,password}):await sbAuth('token?grant_type=password',{email,password});
+    if(!sbSetSess(j)){SB.sess=null;sbPersist();sbUI();sbStat('Pendaftaran berhasil. Cek email untuk konfirmasi, lalu tekan Masuk.','warn');return;}
+    sbPersist();sbUI();$('#sbpass').value='';
+    await sbSync();
+  }catch(e){sbStat(e.message,'err');}
+}
+$('#sbbtn').addEventListener('click',sbOpen);
+$('#sbin').addEventListener('click',()=>sbLogin(false));
+$('#sbup').addEventListener('click',()=>sbLogin(true));
+$('#sbsync').addEventListener('click',async()=>{try{sbReadForm();}catch(e){sbStat(e.message,'err');return;}if(!sbOn()){sbStat('Masuk dulu.','err');return;}sbPersist();await sbSync();});
+$('#sbout').addEventListener('click',()=>{SB.sess=null;sbPersist();sbUI();sbStat('Keluar. Data lokal di browser ini tetap ada.','');});
+$('#sbsql').addEventListener('click',function(){copyTxt(SB_SQL,this);});
+sbUI();if(sbOn())setTimeout(sbSync,1500);
 
 function htmlOf(t){const m=t.match(/```html[^\n]*\n([\s\S]*?)```/i)||t.match(/```html[^\n]*\n([\s\S]*)$/i);return m?m[1].trim():'';}
 
@@ -3138,6 +3323,7 @@ $('#form').addEventListener('submit',e=>{
   if(/^\/help$/i.test(txt)){addMsg(boss,'Perintah:\n/skill membuka pengelola skill (unggah SKILL.md atau zip)\n/gambar <deskripsi> membuat gambar atau foto (butuh Gemini)\n/tugas <perintah> memberi tugas ke seluruh tim (Einstein, DeepSeek, Doraemon bekerja bersama). Agen mengajukan rencana (dan usulan yang lebih berguna bila ada), dikerjakan setelah Anda setujui; hasilnya muncul di chat dan tombol HASIL\n@Einstein, @DeepSeek, @Doraemon bicara langsung\n/gemini pengaturan API key\n/hasil riwayat hasil\n/reset hapus ingatan percakapan agen\n/status papan tugas\n/adzan reset hapus file adzan\nShift+Enter untuk baris baru.','hint');return;}
   if(/^\/gemini$/i.test(txt)){openSet();return;}
   if(/^\/hasil$/i.test(txt)){openList();return;}
+  if(/^\/supabase$/i.test(txt)){sbOpen();return;}
   if(/^\/skills?$/i.test(txt)){openSkills();return;}
   if(/^\/reset$/i.test(txt)){hist={};addMsg(boss,'Ingatan percakapan agen dihapus.','sys');return;}
   if(/^\/adzan\s+reset$/i.test(txt)){useAdhanBlob(null);try{IDB.set(null);}catch(_){}addMsg(boss,'File adzan dihapus, kembali ke suara bawaan.','sys');return;}
