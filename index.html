@@ -221,7 +221,6 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
       <button class="chip" id="gbtn" type="button" title="Hubungkan ke Gemini / Google AI Studio"><i id="gdot"></i>GEMINI</button>
       <button class="chip" id="rbtn" type="button" title="Riwayat hasil kerja agen">HASIL <b id="rcount">0</b></button>
       <button class="chip" id="sbtn" type="button" title="Unggah skill untuk agen">SKILL <b id="scount">0</b></button>
-      <button class="chip" id="sbbtn" type="button" title="Simpan dan sinkronkan data ke Supabase"><i id="sbdot"></i>SUPABASE</button>
       <span class="mn" id="mentions"></span>
       <span class="gs" id="gline"></span>
      </div>
@@ -2911,7 +2910,7 @@ const sbKnown={skill:new Set(),result:new Set(),task:new Set(),chat:new Set()},s
 const chatId=e=>e.t+'-'+e.id+'-'+hs(String(e.text||'')).toString(36);
 let sbTimer=0,sbBusy=false,sbMsg='';
 function sbStat(t,c){sbMsg=t;const e=$('#sbstat');if(e){e.textContent=t;e.className='stat'+(c?' '+c:'');}}
-function sbUI(){$('#sbdot').classList.toggle('on',sbOn());}
+function sbUI(){const d=$('#sbdot');if(d)d.classList.toggle('on',sbOn());}
 async function sbErr(res){
   let m='';try{const j=await res.json();m=j.message||j.msg||j.error_description||j.error||'';}catch(e){}
   if(res.status===404||/relation|schema cache|does not exist|PGRST20/i.test(m))return 'Tabel belum dibuat. Jalankan SQL penyiapan di SQL Editor Supabase dulu.';
@@ -3058,7 +3057,7 @@ async function sbLogin(signup){
     await sbSync();
   }catch(e){sbStat(e.message,'err');}
 }
-$('#sbbtn').addEventListener('click',sbOpen);
+{const b=$('#sbbtn');if(b)b.addEventListener('click',sbOpen);}
 $('#sbin').addEventListener('click',()=>sbLogin(false));
 $('#sbup').addEventListener('click',()=>sbLogin(true));
 $('#sbsync').addEventListener('click',async()=>{try{sbReadForm();}catch(e){sbStat(e.message,'err');return;}if(!sbOn()){sbStat('Masuk dulu.','err');return;}sbPersist();await sbSync();});
