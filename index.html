@@ -2482,13 +2482,15 @@ function dlImg(u,name){const a=document.createElement('a');a.href=u;a.download=n
 async function gImage(a,prompt,signal,refs,opts){
   opts=opts||{};let lastErr=null;
   const all=await imgModelList(signal);
-  if(!all.length)throw new Error('Akun Google AI Studio Anda belum punya model Gemini yang bisa membuat gambar. Biasanya butuh paket berbayar atau akses model gambar di akun Anda.');
+  if(!all.length){const er=new Error('Akun Google AI Studio Anda belum punya model Gemini yang bisa membuat gambar. Biasanya butuh paket berbayar atau akses model gambar di akun Anda.');er.noModel=true;throw er;}
   const models=imgOK&&all.includes(imgOK)?[imgOK].concat(all.filter(x=>x!==imgOK)):all;
   for(const model of models){
     let res;
     try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify({contents:[{role:'user',parts:[{text:skPrompt(a,prompt,true)+prompt}].concat((refs||[]).slice(0,3).map(u=>{const m=/^data:(.+?);base64,(.*)$/.exec(u);return m?{inlineData:{mimeType:m[1],data:m[2]}}:null;}).filter(Boolean))}],generationConfig:Object.assign({responseModalities:['TEXT','IMAGE']},opts.ratio&&!opts.noRatio?{imageConfig:{aspectRatio:opts.ratio}}:{})})});}
     catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error(NETERR);er.net=1;throw er;}
-    if(!res.ok){const er=new Error(await gErr(res));er.code=res.status;lastErr=er;if(res.status===400&&opts.ratio&&!opts.noRatio)return gImage(a,prompt,signal,refs,Object.assign({},opts,{noRatio:1}));if(res.status===404||res.status===400||res.status===403||res.status===429){if(model!==models[models.length-1])continue;}throw er;}
+    if(!res.ok){const er=new Error(await gErr(res));er.code=res.status;const gl=gErr0.last||{};
+      if(res.status===429&&!gl.zero&&gl.delay&&gl.delay<=20&&!opts.waited){await new Promise(r=>setTimeout(r,gl.delay*1000+300));return gImage(a,prompt,signal,refs,Object.assign({},opts,{waited:1}));}
+      er.message='Model gambar '+model+': '+er.message;lastErr=er;if(res.status===400&&opts.ratio&&!opts.noRatio)return gImage(a,prompt,signal,refs,Object.assign({},opts,{noRatio:1}));if(res.status===404||res.status===400||res.status===403||res.status===429){if(model!==models[models.length-1])continue;}throw er;}
     const j=await res.json(),c=j.candidates&&j.candidates[0];
     let text='';const imgs=[];
     if(c&&c.content&&c.content.parts)c.content.parts.forEach(p=>{
@@ -2656,13 +2658,13 @@ async function gErr(res){
  const _m=await gErr0(res);return _m;
 }
 async function gErr0(res){
- let m='';try{const j=await res.json();m=(j.error&&j.error.message)||'';}catch(e){}
+ let m='';gErr0.last={};try{const j=await res.json();m=(j.error&&j.error.message)||'';const ri=((j.error&&j.error.details)||[]).find(d=>d&&d.retryDelay);if(ri){const q=String(ri.retryDelay).match(/([\d.]+)/);if(q)gErr0.last.delay=parseFloat(q[1]);}gErr0.last.zero=/limit:\s*0/i.test(m);}catch(e){}
  const c=res.status;
  if(c===400&&/API key/i.test(m))return 'API key tidak valid. Periksa lagi kuncinya lewat tombol GEMINI.';
  if(c===400)return 'Permintaan ditolak (400): '+m.slice(0,200);
  if(c===401||c===403)return 'Akses ditolak ('+c+'). Pastikan API key benar dan Generative Language API aktif untuk proyek itu. '+m.slice(0,140);
  if(c===404)return 'Model "'+GM.model+'" tidak ditemukan. Ganti model lewat tombol GEMINI (coba gemini-flash-latest).';
- if(c===429)return 'Kuota atau limit Gemini habis (429). Tunggu sebentar, atau cek kuota di Google AI Studio.';
+ if(c===429)return 'Kuota atau limit Gemini habis (429)'+(gErr0.last&&gErr0.last.zero?' (kuota gratis model ini 0, butuh billing aktif)':'')+'. Tunggu sebentar, atau cek kuota di Google AI Studio.'+(m?' ['+m.slice(0,140)+']':'');
  if(c===503)return 'Model Gemini sedang overload (503). Sudah dicoba ulang otomatis; coba lagi sebentar atau ganti model.';
  if(c>=500)return 'Server Gemini sedang bermasalah ('+c+'). Coba lagi sebentar.';
  return 'Error '+c+': '+m.slice(0,200);
@@ -2837,6 +2839,39 @@ async function teamRun(lead,full,ut,alt){
   }finally{team.forEach(a=>{a.busy=Math.max(0,(a.busy||1)-1);});acts.remove();}
 }
 
+
+/* ---------- cadangan: bila model gambar tidak bisa dipakai (kuota habis, akun gratis), slide dibuat sebagai grafis SVG oleh model teks lalu diubah jadi PNG ---------- */
+const isQuotaErr=e=>!!e&&(e.code===429||e.code===403||e.noModel);
+function dimsOf(ratio){return ratio==='4:5'?[1080,1350]:ratio==='9:16'?[1080,1920]:ratio==='16:9'?[1600,900]:[1080,1080];}
+function svgToPng(svg,W,H){
+  return new Promise((res,rej)=>{
+    svg=String(svg).trim().replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi,'').replace(/\son\w+\s*=\s*("[^"]*"|'[^']*')/gi,'').replace(/(xlink:)?href\s*=\s*("(?!#)[^"]*"|'(?!#)[^']*')/gi,'').replace(/@import[^;]*;/gi,'');
+    const m=svg.match(/<svg\b[^>]*>/i);if(!m)return rej(new Error('SVG tidak valid'));
+    let tag=m[0],vb=/viewBox\s*=/.test(tag);
+    tag=tag.replace(/\s(width|height)\s*=\s*("[^"]*"|'[^']*')/gi,'');
+    if(!/xmlns\s*=/.test(tag))tag=tag.replace(/<svg/i,'<svg xmlns="http://www.w3.org/2000/svg"');
+    tag=tag.replace(/<svg/i,'<svg width="'+W+'" height="'+H+'"'+(vb?'':' viewBox="0 0 '+W+' '+H+'"'));
+    svg=svg.replace(m[0],tag);
+    const url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'})),im=new Image();
+    im.onload=()=>{try{const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,W,H);x.drawImage(im,0,0,W,H);URL.revokeObjectURL(url);res(c.toDataURL('image/png'));}catch(e){rej(e);}};
+    im.onerror=()=>{URL.revokeObjectURL(url);rej(new Error('SVG tidak valid'));};
+    im.src=url;
+  });
+}
+async function svgSlides(a,items,style,context,signal,ratio){
+  const [W,H]=dimsOf(ratio),n=items.length;
+  const list=items.map((it,i)=>(i+1)+'. '+[it.title&&'judul "'+it.title+'"',it.text&&'teks "'+it.text+'"',it.visual&&'visual: '+it.visual].filter(Boolean).join(', ')).join('\n');
+  const prompt='Kamu desainer grafis. Buat '+n+(n>1?' desain slide':' gambar')+' sebagai SVG murni, ukuran tiap gambar '+W+'x'+H+' (viewBox="0 0 '+W+' '+H+'"). Gaya visual'+(n>1?' yang seragam di semua slide':'')+': '+style+'.\nAturan: hanya elemen SVG (rect, circle, ellipse, path, polygon, line, text, tspan, g, defs, linearGradient, radialGradient). TANPA gambar eksternal, TANPA font eksternal (pakai font-family="Arial, Helvetica, sans-serif"). Teks besar, tebal, dan terbaca (judul minimal 80px, isi minimal 42px), pecah teks panjang manual dengan beberapa <tspan> atau <text> supaya tidak keluar bingkai, kontras tinggi, beri ilustrasi atau elemen dekoratif geometris yang relevan dengan topiknya.\nKonteks: '+context+'\nIsi:\n'+list+'\n\nBalas HANYA '+n+' blok kode berurutan, tiap blok berbentuk ```svg ... ```, tanpa penjelasan.';
+  const out=await gStream(a,prompt,true,signal,()=>{},()=>{});
+  let blocks=[...out.text.matchAll(/```svg\s*([\s\S]*?)```/gi)].map(m=>m[1]);
+  if(!blocks.length)blocks=out.text.match(/<svg[\s\S]*?<\/svg>/gi)||[];
+  const pngs=[];
+  for(const b of blocks.slice(0,n)){try{pngs.push(await svgToPng(b,W,H));}catch(e){}}
+  if(!pngs.length)throw new Error('Model teks tidak menghasilkan SVG yang valid. Coba lagi.');
+  return pngs;
+}
+const SVG_NOTE='**Catatan:** model gambar Gemini tidak bisa dipakai saat ini (biasanya kuota habis atau akun gratis), jadi gambar dibuat sebagai grafis vektor oleh model teks.';
+
 /* ---------- carousel: rancang slide, lalu buat tiap slide sebagai gambar dengan gaya seragam ---------- */
 async function carouselRun(a,prompt,ut,meta){
   const n=carouselCount(prompt);
@@ -2853,17 +2888,18 @@ async function carouselRun(a,prompt,ut,meta){
     let P=null;try{const m=plan.text.match(/\{[\s\S]*\}/);P=JSON.parse(m?m[0]:'');}catch(e){P=null;}
     const slides=(P&&Array.isArray(P.slides)&&P.slides.length?P.slides:Array.from({length:n},(_,i)=>({title:i?'Slide '+(i+1):prompt.slice(0,50),text:'',visual:prompt}))).slice(0,n);
     const style=(P&&P.style)||'desain modern, bersih, kontras tinggi, tipografi tebal';
-    const imgs=[];let failed=0;
+    const imgs=[];let failed=0,svgMode=false;
     for(let i=0;i<slides.length;i++){
       if(ac.signal.aborted)throw Object.assign(new Error('x'),{name:'AbortError'});
       r.tx.classList.add('wait');r.tx.textContent='Membuat slide '+(i+1)+' dari '+slides.length+'…';
       const sl=slides[i],ip='Buat SATU GAMBAR desain slide carousel Instagram, rasio 4:5 vertikal. Konteks: '+prompt+'. Gaya visual yang seragam di semua slide: '+style+'. Ini slide '+(i+1)+' dari '+slides.length+'. Teks yang HARUS tampil di gambar, besar, tebal, mudah dibaca, dengan ejaan persis: judul "'+(sl.title||'')+'"'+(sl.text?' dan teks "'+sl.text+'"':'')+'. Visual: '+(sl.visual||'')+'.'+(i?' Samakan gaya, warna, dan tipografi dengan gambar referensi terlampir.':'')+' Keluaran harus berupa gambar, bukan teks.';
-      try{const o=await gImage(a,ip,ac.signal,i&&imgs[0]?[imgs[0]]:null,{ratio:'4:5'});imgs.push(o.imgs[0]);}
-      catch(e){if(e&&e.name==='AbortError')throw e;failed++;if(!imgs.length&&i>=1&&failed>=2)throw e;}
+      try{const o=await gImage(a,ip,ac.signal,i&&imgs[0]?[imgs[0]]:null,{ratio:'4:5'});imgs.push(o.imgs[0]);if(i<slides.length-1)await sleep(1200);}
+      catch(e){if(e&&e.name==='AbortError')throw e;if(!imgs.length&&isQuotaErr(e)){svgMode=true;break;}failed++;if(!imgs.length&&i>=1&&failed>=2)throw e;}
     }
+    if(svgMode){r.tx.classList.add('wait');r.tx.textContent='Model gambar tidak tersedia (kuota habis). Membuat slide sebagai grafis vektor…';imgs.push(...await svgSlides(a,slides,style,prompt,ac.signal,'4:5'));}
     if(!imgs.length)throw new Error('Tidak ada slide yang berhasil dibuat. Coba lagi.');
     const cap=((P&&P.caption)||'').trim();
-    const text=(cap?'**Caption:**\n\n'+cap:'Carousel selesai.')+(failed?'\n\n_('+failed+' slide gagal dibuat. Tekan Revisi untuk mencoba lagi.)_':'');
+    const text=(svgMode?SVG_NOTE+'\n\n':'')+(cap?'**Caption:**\n\n'+cap:'Carousel selesai.')+(failed?'\n\n_('+failed+' slide gagal dibuat. Tekan Revisi untuk mencoba lagi.)_':'');
     const rec={id:'r'+t0,t:t0,agent:a.id,prompt:(meta&&meta.title)||prompt,text,task:!!ut,imgs,carousel:true};
     if(meta&&meta.from){rec.orig=meta.from.orig||meta.from.prompt;rec.v=(meta.from.v||1)+1;}
     results.push(rec);rSave();gCount();
@@ -2892,9 +2928,15 @@ async function gemRun(a,prompt,task,ut,mode,meta){
  const paint=()=>{raf=0;const near=msgs.scrollHeight-msgs.scrollTop-msgs.clientHeight<90;r.tx.classList.remove('wait');r.tx.replaceChildren(mdRender(cur.replace(/^\s*\[SKILL:[^\]\n]*(\]\s*|$)/i,'')));if(near)msgs.scrollTop=msgs.scrollHeight;};
  try{
   if(img){r.tx.classList.add('wait');r.tx.textContent='Sedang membuat gambar…';}
-  const out=img?await gImage(a,prompt,ac.signal,meta&&meta.refs,{ratio:meta?'':inferRatio(prompt)}):await gStream(a,prompt,task,ac.signal,t=>{streaming=true;cur=t;if(!raf)raf=requestAnimationFrame(paint);},m=>{if(!cur){r.tx.classList.add('wait');r.tx.textContent=m;}a.bubble={text:'Mencoba lagi…',ttl:1.4};});
+  let svgUsed=false;
+  const out=img?await gImage(a,prompt,ac.signal,meta&&meta.refs,{ratio:meta?'':inferRatio(prompt)}).catch(async e=>{
+    if(!isQuotaErr(e)||(meta&&meta.refs&&meta.refs.length)||(e&&e.name==='AbortError'))throw e;
+    r.tx.classList.add('wait');r.tx.textContent='Model gambar tidak tersedia (kuota habis). Membuat gambar sebagai grafis vektor…';
+    svgUsed=true;
+    return {text:'',imgs:await svgSlides(a,[{visual:prompt}],'desain modern, bersih, kontras tinggi',prompt,ac.signal,meta?'':inferRatio(prompt)),finish:''};
+  }):await gStream(a,prompt,task,ac.signal,t=>{streaming=true;cur=t;if(!raf)raf=requestAnimationFrame(paint);},m=>{if(!cur){r.tx.classList.add('wait');r.tx.textContent=m;}a.bubble={text:'Mencoba lagi…',ttl:1.4};});
   if(raf)cancelAnimationFrame(raf);
-  let text=out.text||(img?'Gambarnya sudah jadi, silakan dilihat.':'');
+  let text=(svgUsed?SVG_NOTE+'\n\n':'')+(out.text||(img?'Gambarnya sudah jadi, silakan dilihat.':''));
   let usedSk=[];{const sm=text.match(/^\s*\[SKILL:\s*([^\]\n]*)\]\s*/i);if(sm){usedSk=sm[1].split(',').map(x=>x.trim()).filter(x=>x&&x!=='-');text=text.slice(sm[0].length);}}
   if(out.finish==='MAX_TOKENS')text+='\n\n_(Jawaban terpotong karena mencapai batas panjang. Minta agen melanjutkan.)_';
   const h=hist[a.id]=hist[a.id]||[];
