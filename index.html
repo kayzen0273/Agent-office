@@ -164,6 +164,9 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
 .sk b{font-size:13px;overflow-wrap:anywhere}
 .sk p{font-size:12px;color:var(--muted);margin:4px 0 6px;line-height:1.5;overflow-wrap:anywhere}
 .sk select{background:#0f1116;border:1px solid var(--line);color:var(--text);border-radius:6px;padding:3px 6px;font-size:12px}
+.rev{margin-top:8px;display:grid;gap:6px}
+.rev textarea{width:100%;background:#0f1116;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:8px 10px;font:inherit;font-size:14px;resize:vertical}
+.rev .chips{display:flex;gap:6px;flex-wrap:wrap}
 .pv{margin-top:8px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
 .pv iframe{display:block;border:0;background:#fff;transform-origin:0 0}
 .pv .vp{position:relative;overflow:hidden;background:#fff}
@@ -248,6 +251,7 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
   <div class="db">
    <div class="tabs" id="rtabs" hidden><button class="mini" id="tabt" type="button" aria-pressed="true">Teks</button><button class="mini" id="tabp" type="button" aria-pressed="false">Pratinjau</button></div>
    <div id="rbody"></div>
+   <div id="rrev" style="margin-top:14px"></div>
   </div>
   <div class="df"><button class="mini pri" id="rcopy" type="button">Salin</button><button class="mini" id="rmd" type="button">Unduh .md</button><button class="mini" id="rhtml" type="button" hidden>Unduh .html</button></div>
  </div>
@@ -2445,11 +2449,11 @@ function imgNodes(rec){
   return box;
 }
 function dlImg(u,name){const a=document.createElement('a');a.href=u;a.download=name;document.body.append(a);a.click();a.remove();}
-async function gImage(a,prompt,signal){
+async function gImage(a,prompt,signal,refs){
   let lastErr=null;
   for(const model of IMGM){
     let res;
-    try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{responseModalities:['TEXT','IMAGE']}})});}
+    try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt}].concat((refs||[]).slice(0,3).map(u=>{const m=/^data:(.+?);base64,(.*)$/.exec(u);return m?{inlineData:{mimeType:m[1],data:m[2]}}:null;}).filter(Boolean))}],generationConfig:{responseModalities:['TEXT','IMAGE']}})});}
     catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error(NETERR);er.net=1;throw er;}
     if(!res.ok){const er=new Error(await gErr(res));er.code=res.status;lastErr=er;if(res.status===404||res.status===400)continue;throw er;}
     const j=await res.json(),c=j.candidates&&j.candidates[0];
@@ -2587,6 +2591,27 @@ $('#skfile').addEventListener('change',async e=>{
 });
 skCount();
 
+
+/* ---------- revisi: CEO memberi instruksi lanjutan atas hasil agen ---------- */
+function reviseBox(rec,onSend){
+  const box=document.createElement('div');box.className='rev';
+  const ta=document.createElement('textarea');ta.rows=2;ta.maxLength=1500;ta.setAttribute('aria-label','Instruksi revisi');
+  ta.placeholder='Tulis instruksi revisi, misalnya: ganti warna jadi biru, tombol dibuat lebih besar';
+  const send=()=>{const v=ta.value.trim();if(!v){ta.focus();return;}onSend(v);};
+  ta.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();send();}});
+  const ch=document.createElement('div');ch.className='chips';
+  (rec.imgs?['Lebih terang','Ganti gaya','Tambah detail','Latar polos']:htmlOf(rec.text)?['Ganti warna','Lebih modern','Tambah mode gelap','Perbaiki tampilan HP']:['Lebih singkat','Lebih detail','Nada lebih formal']).forEach(t=>ch.append(mini(t,()=>{ta.value=(ta.value?ta.value.replace(/[;\s]+$/,'')+'; ':'')+t.toLowerCase();ta.focus();})));
+  ch.append(mini('Kirim revisi',send,1));
+  box.append(ta,ch);return box;
+}
+function reviseRun(rec,instr){
+  if(!GM.key){addMsg(boss,'Revisi butuh Gemini yang aktif. Klik tombol GEMINI di bawah chat.','hint');return;}
+  const a=byId(rec.agent)||AG[1],img=!!(rec.imgs&&rec.imgs.length),orig=rec.orig||rec.prompt,h=!!htmlOf(rec.text);
+  const prompt='Ini REVISI atas hasil kerjamu sebelumnya.\nPermintaan awal CEO: "'+orig+'"\n\nHasil sebelumnya:\n'+rec.text.slice(0,40000)+'\n\nInstruksi revisi dari CEO: '+instr+'\n\nTerapkan revisi lalu berikan hasil lengkap yang sudah diperbarui, bukan hanya bagian yang berubah.'+(h?' Berikan SATU file HTML lengkap dalam satu blok ```html.':'')+(img?' Ubah gambar yang dilampirkan sesuai instruksi.':'');
+  addMsg(boss,'Revisi untuk '+a.name+': '+instr,'sys',Date.now(),true);
+  gemRun(a,prompt,true,null,img?'img':undefined,{title:'Revisi: '+instr.slice(0,80),from:rec,refs:rec.imgs});
+}
+
 function htmlOf(t){const m=t.match(/```html[^\n]*\n([\s\S]*?)```/i)||t.match(/```html[^\n]*\n([\s\S]*)$/i);return m?m[1].trim():'';}
 
 /* panggilan API */
@@ -2720,7 +2745,7 @@ async function gModels(){
 }
 
 /* menjalankan perintah lewat agen */
-async function gemRun(a,prompt,task,ut,mode){
+async function gemRun(a,prompt,task,ut,mode,meta){
  const img=mode==='img';
  lastAg=a;a.busy=(a.busy||0)+1;
  const tkSet=(st,ow)=>{if(!ut)return;ut.st=st;ut.ow=ow;if(st===2)ut.dt=Date.now();save();refreshTasks(Date.now());};
@@ -2736,14 +2761,15 @@ async function gemRun(a,prompt,task,ut,mode){
  const paint=()=>{raf=0;const near=msgs.scrollHeight-msgs.scrollTop-msgs.clientHeight<90;r.tx.classList.remove('wait');r.tx.replaceChildren(mdRender(cur));if(near)msgs.scrollTop=msgs.scrollHeight;};
  try{
   if(img){r.tx.classList.add('wait');r.tx.textContent='Sedang membuat gambar…';}
-  const out=img?await gImage(a,prompt,ac.signal):await gStream(a,prompt,task,ac.signal,t=>{streaming=true;cur=t;if(!raf)raf=requestAnimationFrame(paint);},m=>{if(!cur){r.tx.classList.add('wait');r.tx.textContent=m;}a.bubble={text:'Mencoba lagi…',ttl:1.4};});
+  const out=img?await gImage(a,prompt,ac.signal,meta&&meta.refs):await gStream(a,prompt,task,ac.signal,t=>{streaming=true;cur=t;if(!raf)raf=requestAnimationFrame(paint);},m=>{if(!cur){r.tx.classList.add('wait');r.tx.textContent=m;}a.bubble={text:'Mencoba lagi…',ttl:1.4};});
   if(raf)cancelAnimationFrame(raf);
   let text=out.text||(img?'Gambarnya sudah jadi, silakan dilihat.':'');
   if(out.finish==='MAX_TOKENS')text+='\n\n_(Jawaban terpotong karena mencapai batas panjang. Minta agen melanjutkan.)_';
   const h=hist[a.id]=hist[a.id]||[];
-  h.push({role:'user',parts:[{text:prompt}]},{role:'model',parts:[{text:text.slice(0,6000)}]});
+  h.push({role:'user',parts:[{text:(meta&&meta.title)||prompt}]},{role:'model',parts:[{text:text.slice(0,6000)}]});
   while(h.length>16)h.splice(0,2);
-  const rec={id:'r'+t0,t:t0,agent:a.id,prompt,text,task:!!task,imgs:out.imgs};
+  const rec={id:'r'+t0,t:t0,agent:a.id,prompt:(meta&&meta.title)||prompt,text,task:!!task,imgs:out.imgs};
+  if(meta&&meta.from){rec.orig=meta.from.orig||meta.from.prompt;rec.v=(meta.from.v||1)+1;}
   results.push(rec);rSave();gCount();
   const flat=text.replace(/\s+/g,' ');
   log.push({t:Date.now(),id:a.id,text:flat.slice(0,220)+(flat.length>220?'… (selengkapnya di tombol HASIL)':''),sys:''});save();
@@ -2759,7 +2785,7 @@ async function gemRun(a,prompt,task,ut,mode){
   else{
    const msg=(e&&e.message)||'Terjadi kesalahan.';
    r.tx.textContent=msg+(/API key|Akses ditolak|diblokir/.test(msg)?'':'\n\n(Sudah dicoba otomatis beberapa menit. Tekan Coba lagi bila internet sudah stabil.)');
-   acts.append(mini('Coba lagi',()=>{acts.remove();gemRun(a,prompt,task,ut,mode);}));
+   acts.append(mini('Coba lagi',()=>{acts.remove();gemRun(a,prompt,task,ut,mode,meta);}));
    if(/API key|Akses ditolak|Model "/.test(msg))acts.append(mini('Buka pengaturan',openSet));
   }
  }finally{
@@ -2771,7 +2797,11 @@ async function gemRun(a,prompt,task,ut,mode){
 function finishRow(r,acts,rec){
  r.tx.className='tx ai';r.tx.replaceChildren(mdRender(rec.text));
  if(r.tx.scrollHeight>250)r.tx.classList.add('clamp');
- acts.replaceChildren(mini('Lihat hasil',()=>openRes(rec),1),mini('Salin',function(){copyTxt(rec.text,this);}));
+ let rvb=null;
+ acts.replaceChildren(mini('Lihat hasil',()=>openRes(rec),1),mini('Revisi',()=>{
+  if(rvb){rvb.remove();rvb=null;return;}
+  rvb=reviseBox(rec,v=>{rvb.remove();rvb=null;reviseRun(rec,v);});r.body.append(rvb);msgs.scrollTop=msgs.scrollHeight;rvb.querySelector('textarea').focus();
+ }),mini('Salin',function(){copyTxt(rec.text,this);}));
  const hh=htmlOf(rec.text);
  if(hh){
   acts.append(mini('Layar penuh',()=>openRes(rec,'prev')));
@@ -2809,9 +2839,11 @@ function showTab(t){
 }
 function openRes(rec,tab){
  curRec=rec;const a=byId(rec.agent)||AG[1],hasH=!!htmlOf(rec.text);
- $('#rtitle').textContent=a.name+' · '+rec.prompt.replace(/\s+/g,' ').slice(0,80);
+ $('#rtitle').textContent=a.name+(rec.v?' · v'+rec.v:'')+' · '+rec.prompt.replace(/\s+/g,' ').slice(0,80);
  $('#rtabs').hidden=!hasH;$('#rhtml').hidden=!hasH;
  showTab(hasH&&tab==='prev'?'prev':'text');
+ const rv=$('#rrev');rv.replaceChildren();
+ if(GM.key){const hd=document.createElement('p');hd.className='note';hd.textContent='Revisi hasil ini: tulis instruksi, agen memperbaruinya sebagai versi baru.';rv.append(hd,reviseBox(rec,v=>{$('#gres').hidden=true;reviseRun(rec,v);}));}
  $('#gres').hidden=false;
 }
 $('#tabt').addEventListener('click',()=>showTab('text'));
@@ -2827,7 +2859,7 @@ function openList(){
   const a=byId(rec.agent)||AG[1],b=document.createElement('button');b.type='button';b.className='it';
   const h=document.createElement('div');h.className='ith';
   const n=document.createElement('b');n.textContent=a.name;n.style.color=a.color;
-  const s=document.createElement('span');s.textContent=new Date(rec.t).toLocaleString('id-ID',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+(rec.task?' · TUGAS':'');
+  const s=document.createElement('span');s.textContent=new Date(rec.t).toLocaleString('id-ID',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+(rec.task?' · TUGAS':'')+(rec.v?' · v'+rec.v:'');
   h.append(n,s);
   const p=document.createElement('div');p.className='itp';p.textContent=rec.prompt.slice(0,120);
   const q=document.createElement('div');q.className='itq';q.textContent=(rec.imgs||rec.imgLost?'[gambar] ':'')+rec.text.replace(/\s+/g,' ').slice(0,180);
