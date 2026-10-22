@@ -1,4 +1,3 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>Agent Office</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Silkscreen&display=swap">
@@ -221,7 +220,6 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
       <button class="chip" id="gbtn" type="button" title="Hubungkan ke Gemini / Google AI Studio"><i id="gdot"></i>GEMINI</button>
       <button class="chip" id="rbtn" type="button" title="Riwayat hasil kerja agen">HASIL <b id="rcount">0</b></button>
       <button class="chip" id="sbtn" type="button" title="Unggah skill untuk agen">SKILL <b id="scount">0</b></button>
-      <button class="chip" id="sbbtn" type="button" title="Simpan dan sinkronkan data ke Supabase"><i id="sbdot"></i>SUPABASE</button>
       <span class="mn" id="mentions"></span>
       <span class="gs" id="gline"></span>
      </div>
@@ -271,21 +269,6 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
    <p class="stat" id="skstat" aria-live="polite"></p>
    <div id="sklist"></div>
   </div>
- </div>
-</div>
-<div class="ov" id="gsb" hidden>
- <div class="dlg sm" role="dialog" aria-modal="true" aria-labelledby="sbt">
-  <div class="dh"><h2 id="sbt">Supabase</h2><button class="mini" type="button" data-x>Tutup</button></div>
-  <div class="db">
-   <p class="note">Hasil kerja agen (termasuk gambar), skill, daftar tugas di papan, dan riwayat chat disimpan di proyek Supabase Anda, jadi sama di semua perangkat. Buat proyek gratis di <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer">supabase.com</a>, jalankan SQL di bawah sekali di SQL Editor, lalu isi kolom ini. Yang dipakai adalah <b>anon key</b> (bukan service key).</p>
-   <details style="margin:0 0 12px"><summary style="cursor:pointer;font-size:12px;color:#7db4ff">Lihat SQL penyiapan</summary><pre id="sbsqlpre" style="white-space:pre-wrap;font:11px monospace;background:#0f1116;border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0;color:#c9d1e6;max-height:220px;overflow:auto"></pre><button class="mini" id="sbsql" type="button">Salin SQL</button></details>
-   <label class="fld"><span>Project URL</span><input id="sburl" autocomplete="off" spellcheck="false" placeholder="https://xxxx.supabase.co"></label>
-   <label class="fld"><span>Anon key</span><input id="sbkey" type="password" autocomplete="off" spellcheck="false" placeholder="eyJ..."></label>
-   <label class="fld"><span>Email</span><input id="sbemail" type="email" autocomplete="username" placeholder="email@contoh.com"></label>
-   <label class="fld"><span>Kata sandi (minimal 6 karakter, tidak disimpan di browser)</span><input id="sbpass" type="password" autocomplete="current-password"></label>
-   <p class="stat" id="sbstat" aria-live="polite"></p>
-  </div>
-  <div class="df"><button class="mini pri" id="sbin" type="button">Masuk</button><button class="mini" id="sbup" type="button">Daftar</button><button class="mini" id="sbsync" type="button">Sinkron sekarang</button><button class="mini" id="sbout" type="button">Keluar</button></div>
  </div>
 </div>
 <div class="ov" id="glist" hidden>
@@ -881,13 +864,15 @@ function overlayTags(){
     if(bb){
       const txt=bb.text,bf=Math.max(10,8*S0*1.25+3.5);
       ctx.font=`500 ${bf}px 'IBM Plex Sans', sans-serif`;
-      const bw=Math.min(230,ctx.measureText(txt).width+14),bh=bf+9,by=tp-bh-fs*.45-4;
+      let ls=[txt];
+      if(ctx.measureText(txt).width>190){const m=txt.length>>1;let k=txt.lastIndexOf(' ',m);const k2=txt.indexOf(' ',m);if(k<0||(k2>=0&&m-k>k2-m))k=k2;if(k>0)ls=[txt.slice(0,k),txt.slice(k+1)];}
+      const lh=bf*1.2,bw=Math.min(240,Math.max(...ls.map(z=>ctx.measureText(z).width))+14),bh=ls.length>1?lh*ls.length+8:bf+9,by=tp-bh-fs*.45-4;
       let bxx=x-bw/2;bxx=Math.max(4,Math.min(CW-bw-4,bxx));
       ctx.fillStyle='#f5f6f9';ctx.beginPath();
       if(ctx.roundRect)ctx.roundRect(bxx,by,bw,bh,5);else ctx.rect(bxx,by,bw,bh);
       ctx.fill();
       ctx.beginPath();ctx.moveTo(x-4,by+bh);ctx.lineTo(x+4,by+bh);ctx.lineTo(x,by+bh+5);ctx.closePath();ctx.fill();
-      ctx.fillStyle='#1b1d25';ctx.fillText(txt,bxx+bw/2,by+bh/2+.5,bw-8);
+      ctx.fillStyle='#1b1d25';ls.forEach((z,i)=>ctx.fillText(z,bxx+bw/2,ls.length>1?by+4+lh*(i+.5)+.5:by+bh/2+.5,bw-8));
     }
   });
   ctx.textAlign='left';ctx.textBaseline='alphabetic';
@@ -2169,6 +2154,7 @@ function update(dt){
     applySched(a,now);
     if(a.bubble){a.bubble.ttl-=dt;if(a.bubble.ttl<=0)a.bubble=null;}
   });
+  banter(dt);
 }
 
 /* ---------- chat ---------- */
@@ -2203,6 +2189,208 @@ function speak(a,text,t,keep){
   t=t||Date.now();
   addMsg(a,text,'',t,keep);
   if(Date.now()-t<6000){a.bubble={text:text.length>34?text.slice(0,32)+'…':text,ttl:4};beep();}
+}
+
+/* ---------- obrolan kantor: santai saat luang, serius saat ada tugas atau rapat ---------- */
+/* sc(ruang, [slot0, slot1], baris bergantian, opsi): ruang T=ruang tamu, L=ruang santai, B=ruang bermain, P=pantry; need = id agen yang wajib ada di slot */
+const sc=(rm,need,lines,o)=>Object.assign({rm,need:need||[null,null],lines},o||{});
+const BANT=[
+ sc(null,0,["Kopi dulu, {o}? Otakku baru nyala setengah.","Boleh. Yang ini tanpa gula, pahitnya jujur.","Persis kayak feedback dari klien.","Hahaha, jangan bikin trauma."]),
+ sc(null,0,["Nanti makan siang apa ya? Aku bingung terus.","Nasi padang aja, selalu aman.","Setuju. Rendangnya jangan sampai habis duluan.","Kalau habis, aku ngambek."]),
+ sc(null,0,["{o}, akhir pekan ada rencana?","Rencananya rebahan. Realisasinya juga rebahan.","Konsisten, aku suka."]),
+ sc(null,0,["Tadi pagi lalu lintasnya parah banget nggak sih?","Parah. Aku sampai hafal lagu di radio.","Besok berangkat lebih pagi, yuk.","Itu ide bagus yang nggak akan kita lakukan."]),
+ sc(null,0,["AC-nya dingin banget, jariku kaku.","Pakai jaket dong. Atau kita demo ke Bos?","Wifi juga lemot. Jangan-jangan komplotan.","Haha, kita bikin petisi."],{noBoss:true}),
+ sc(null,0,["Printer tadi ngadat lagi. Kertasnya nyangkut.","Dia memang punya mood sendiri.","Kita perlakukan dengan hormat aja.","Sambil bilang \"tolong, ya\"."]),
+ sc(null,0,["Udah nonton serial yang lagi rame itu?","Jangan spoiler, aku baru episode dua!","Tenang. Aku cuma mau bilang endingnya bikin kaget.","Itu sudah spoiler, {o}."]),
+ sc(null,0,["Rasanya kerjaan nggak ada habisnya.","Satu tiket selesai, dua tiket lahir.","Itu hukum alam kantor.","Makanya istirahat sebentar itu wajib."]),
+ sc(null,0,["Tebak: kenapa programmer suka gelap?","Kenapa?","Karena cahaya menarik bug.","Garing, tapi aku tetap ketawa."]),
+ sc(null,0,["Hari ini kamu kelihatan segar, {o}.","Itu cuma cahaya monitor.","Ya sudah, cahayanya cocok sama kamu.","Makasih. Aku catat sebagai pujian."]),
+ sc(null,0,["Kita harus mulai olahraga, serius.","Besok.","Besok yang selalu bergeser itu?","Besok yang itu."]),
+ sc(null,0,["Kalau libur panjang, mau ke mana?","Pantai. Tempat sinyalnya paling jelek.","Pilihan bijak.","Satu-satunya tempat notifikasi nggak bisa menemukan kita."]),
+ sc(null,0,["Menurutmu, dari semua hari, mana yang paling enak?","Jumat sore. Titik.","Kalau Jumat sore ada tiket baru?","Itu namanya jebakan."]),
+ sc(null,0,["Eh, kemarin aku lihat kucing masuk ke lobi.","Terus?","Dia mondar-mandir seperti manajer lagi inspeksi.","Haha, ya sudah, kita angkat dia jadi supervisor."],{noBoss:true}),
+ sc(null,0,["Lagi dengar lagu apa belakangan ini?","Yang pelan-pelan aja, biar fokus.","Kirim daftarnya dong.","Nanti kubuat daftar putar bareng."]),
+ sc(null,0,["Kamu pernah merasa hari Senin kok panjang banget?"," Rasanya Senin itu punya tiga puluh jam.","Dan kopinya cuma satu.","Makanya kita ngopi dua kali."],{day:[1]}),
+ sc(null,0,["Besok sudah libur. Rasanya ringan banget.","Jangan senang dulu, masih ada satu sprint kecil.","Biarkan aku bahagia lima menit."],{day:[5]}),
+ sc(null,["boss",null],["Gimana suasananya, {o}? Santai tapi tetap jalan?","Santai, Bos. Tiket aman, kopi juga aman.","Bagus. Jaga ritmenya.","Siap, Bos."]),
+ sc(null,["boss",null],["Jangan lupa istirahat. Mesin juga perlu ngopi.","Dicatat, Bos. Ini lagi mengisi daya.","Bagus. Nanti sore kita lihat hasilnya bareng.","Baik, Bos."]),
+ sc(null,[null,"boss"],["Bos, tadi saya lihat Bos senyum di depan dashboard.","Grafiknya naik. Wajar kalau senyum.","Wah, pantas semangatnya menular.","Kalian yang bikin grafik itu naik."]),
+ sc(null,["claude","bolt"],["Doraemon, kodeku semalam lolos semua tes. Curiga nggak?","Curiga itu sehat. Nanti kucari bug-nya sampai ketemu.","Silakan. Aku sudah siapkan alasan.","Haha, alasan yang bisa dites?"]),
+ sc(null,["claude","bolt"],["Doraemon, punya dorayaki? Otakku butuh bahan bakar.","Ada satu. Tukar dengan laporan review yang kamu janjikan.","Deal. Rumusnya E = mc², c itu cemilan.","Itu rumus terbaik hari ini."]),
+ sc(null,["bolt","nova"],["DeepSeek, aku nemu tombol yang geser dua piksel.","Dua piksel itu bisa mengganggu mata, tahu.","Tuh kan, kita sepemikiran.","Kalau begitu kita laporkan ke diri sendiri."]),
+ sc(null,["nova","bolt"],["Doraemon, warna biru favoritmu kuambil jadi aksen, ya.","Wah, sip. Biru itu warna keberuntungan.","Dan warna tombol yang paling banyak diklik.","Pantas dia selalu terasa tepat."]),
+ sc(null,["nova","claude"],["Einstein, tombolnya jangan kamu bikin segede itu lagi ya.","Itu untuk aksesibilitas!","Untuk jempol raksasa, maksudmu?","Baiklah, kita kompromi di ukuran sedang."]),
+ sc(null,["claude","nova"],["Menurutku desain yang bagus itu seperti persamaan: ringkas.","Dan nggak ada variabel yang nganggur.","Nah, itu maksudku.","Tulis itu di dinding, nanti jadi pedoman."]),
+ sc(null,["claude",null],["Menurutku waktu itu relatif. Apalagi kalau nunggu build.","Build sepuluh menit terasa sepuluh jam.","Dan istirahat sepuluh menit terasa sepuluh detik.","Hukum kantor nomor satu."]),
+ sc(null,["bolt",null],["Aku lagi nyari bug, tapi bug-nya lebih jago sembunyi.","Mungkin dia belajar dari kamu.","Hahaha. Nanti ketemu juga, aku sabar.","Sabar itu skill QA nomor satu."]),
+ sc(null,["nova",null],["Aku lagi galau antara dua biru yang beda tipis.","Beda tipis itu seberapa?","Cuma dua digit heksadesimal.","Ya Tuhan, krisis besar."]),
+ sc("T",0,["Sofanya empuk banget, aku bisa lupa deadline.","Jangan lupa betulan, nanti ditagih.","Lima menit lagi. Janji.","Aku yang bangunin kalau kebablasan."]),
+ sc("T",0,["Tehnya enak. Siapa yang seduh?","Aku. Rahasianya: sabar.","Kalau begitu aku belajar sabar dulu.","Mulai dengan duduk tenang tiga menit."]),
+ sc("T",0,["Tempat ini paling cocok buat mikir.","Atau pura-pura mikir sambil nikmatin teh.","Dua-duanya sah, kok.","Setuju. Yang penting hasilnya."]),
+ sc("L",0,["Tempat ini bikin ngantuk, tapi enak.","Peregangan dulu, biar punggung nggak protes.","Oke. Satu, dua... aduh, bunyi.","Itu tandanya kamu terlalu lama duduk."]),
+ sc("L",0,["Aku mau rebahan lima belas menit aja.","Alarm dulu, ya. Terakhir kali kebablasan.","Alarm sudah. Volumenya kupasang kecil.","Itu bukan alarm, itu bisikan."]),
+ sc("L",0,["Habis baca buku ini, kepalaku jadi lebih ringan.","Judulnya apa? Aku butuh yang begitu.","Nanti kupinjamkan. Jangan dilipat halamannya.","Aku cuma lipat tiket, bukan halaman."]),
+ sc("B",0,["Billiard sekali, yang kalah traktir kopi?","Setuju. Aku latihan semalam, lho.","Latihan di simulasi nggak dihitung.","Tetap dihitung kalau menang."]),
+ sc("B",0,["Rekor arcade masih punyaku, ya.","Sementara. Aku lagi mengincar.","Silakan. Kalau berhasil, kuberi tepuk tangan.","Satu saja, tapi tulus."]),
+ sc("B",0,["Pertandingan di TV itu seru banget tadi.","Aku ketinggalan. Ada apa?","Skornya bolak-balik, bikin deg-degan.","Ceritakan pelan-pelan, aku siapkan camilan."]),
+ sc("P",0,["Airnya dingin banget hari ini.","Pas buat bangunin otak yang mulai karatan.","Kita bikin jadwal minum air, yuk.","Jadwalnya: kapan pun haus. Selesai."]),
+ sc("P",0,["Kopi habis lagi, ya?","Selalu habis di jam paling penting.","Kita laporkan sebagai insiden prioritas tinggi.","Haha, tiketnya: \"Kopi hilang, tolong\"."])
+];
+/* pembuka singkat (2 baris) bila kedua agen baru bertemu */
+const OPEN=[
+ {rm:null,l:["{g}, {o}! Lagi rehat juga?","Iya, sebentar saja. Kamu?"]},
+ {rm:null,l:["Eh, {o}. Pas banget ketemu di sini.","Hai! Lagi nggak ada kerjaan mendesak, kan?"]},
+ {rm:"T",l:["{o}, gabung sini. Tempatnya nyaman.","Boleh, aku ikut duduk."]},
+ {rm:"L",l:["Hai {o}. Mau ikut santai sebentar?","Mau. Badanku minta diistirahatkan."]},
+ {rm:"B",l:["{o}! Mau main atau nonton aja?","Lihat dulu, siapa tahu terpancing."]},
+ {rm:"P",l:["{o}, kamu juga haus kopi?","Selalu. Ayo ngobrol sambil nunggu."]}
+];
+/* papasan di lorong */
+const PASS=[
+ ["Halo, {o}! Gimana harimu?","Lumayan. Kamu?","Sama, masih semangat."],
+ ["{g}, {o}!","{g}! Semangat ya."],
+ ["Eh {o}, nanti aku ikut nongkrong ya.","Ayo, sampai ketemu di sana."],
+ ["Awas, lantainya baru dipel.","Makasih. Hampir jadi atlet seluncur."],
+ ["Hai {o}. Sudah ngopi?","Belum. Nanti bareng, ya."],
+ ["Eh, {o}! Kangen.","Baru ketemu tadi, lho.","Ya tetap kangen."],
+ ["{o}, jangan lupa minum air.","Siap, ibu kantor.","Aku bukan ibu kantor, tapi sama-sama."]
+];
+/* kata gabung bila ada agen ketiga yang ikut nimbrung */
+const JOINQ=["Kedengaran seru. Boleh ikut nimbrung?","Ngobrolin apa nih? Aku ikut dong."],JOINA=["Boleh! Sini, duduk.","Pas banget, makin ramai makin seru."];
+/* saat ada tugas: nada serius, sesuai peran */
+const SERK={claude:["Aku ambil “{T}”. Mulai dari struktur kodenya.","“{T}” kumulai sekarang. Dampaknya ke modul lain kucek dulu."],nova:["Untuk “{T}”, kerangka tampilannya kususun dulu.","Aku mulai “{T}” dari alur penggunanya."],bolt:["Skenario uji untuk “{T}” kusiapkan dulu.","“{T}” kuuji mulai dari kasus yang paling rawan."]};
+const SERP={claude:["“{T}” sudah separuh jalan. Tinggal merapikan dan menguji.","Logika inti “{T}” selesai. Sekarang kasus tepinya."],nova:["Tampilan “{T}” hampir final. Kontras dan jarak sudah kuperiksa.","“{T}” tinggal penyesuaian terakhir pada komponennya."],bolt:["Pengujian “{T}” berjalan. Sejauh ini belum ada temuan serius.","Ada satu catatan kecil di “{T}”. Kukirim sebentar lagi."]};
+const SERR={claude:["Dimengerti. Bagianku kukirim begitu rapi.","Oke, kode kutulis modular supaya mudah diuji."],nova:["Siap. Tampilannya kusesuaikan dengan itu.","Dicatat. Komponennya kubuat konsisten."],bolt:["Dicatat. Skenario ujinya kusesuaikan.","Siap, hasil tesnya kulaporkan begitu selesai."]};
+const SERA=["Terima kasih, lanjut.","Oke, kabari kalau ada kendala.","Sip, kita sinkron."];
+
+const CV=[],COOL={},TT={},TTA={},USED=new Set();
+let BT=0,cvNext=0,cvTaskNext=0;
+const pairKey=(p,q)=>p.id<q.id?p.id+'|'+q.id:q.id+'|'+p.id;
+const areaOf=a=>{const d=a.dest;if(typeof d!=='string')return null;return /^T\d$/.test(d)?'T':/^L\d$/.test(d)?'L':/^B\d$/.test(d)?'B':d==='cooler'?'P':'O';};
+const cvFree=a=>!a._cv&&!a.pr&&!a.pose&&!(a.busy>0)&&(a.state==='idle'||a.state==='walk');
+const callName=o=>o.human?'Bos':o.name;
+const GRT=()=>{const h=new Date().getHours();return h<11?'Pagi':h<15?'Siang':h<18?'Sore':'Malam';};
+const fillT=(t,o,k)=>t.replace(/\{o\}/g,callName(o)).replace(/\{g\}/g,GRT()).replace(/\{T\}/g,k||'');
+const rp=arr=>arr[Math.floor(Math.random()*arr.length)];
+
+function cvSay(a,text,dur){
+  a.bubble={text,ttl:dur};
+  const near=msgs.scrollHeight-msgs.scrollTop-msgs.clientHeight<70,st=msgs.scrollTop;
+  const r=addMsg(a,text,'',Date.now(),false);r.row.classList.add('chit');
+  const ch=msgs.querySelectorAll('.msg.chit');
+  for(let i=0;i<ch.length-30;i++)ch[i].remove();
+  if(!near)msgs.scrollTop=st;
+}
+function cvPickScript(p,q,ar){
+  const day=new Date().getDay();
+  for(let pass=0;pass<2;pass++){
+    const cand=[];
+    BANT.forEach((s,i)=>{
+      if(USED.has(i))return;
+      if(s.rm&&s.rm!==ar)return;
+      if(s.noBoss&&(p.human||q.human))return;
+      if(s.day&&!s.day.includes(day))return;
+      const ords=[[p,q],[q,p]].filter(o=>(!s.need[0]||o[0].id===s.need[0])&&(!s.need[1]||o[1].id===s.need[1]));
+      if(!ords.length)return;
+      const w=1+((s.need[0]||s.need[1])?2:0)+(s.rm?1:0)+(s.day?3:0);
+      for(let k=0;k<w;k++)cand.push({i,s,o:rp(ords)});
+    });
+    if(cand.length){const c=rp(cand);USED.add(c.i);return c;}
+    USED.clear();
+  }
+  return null;
+}
+function cvMake(t,ps,lines,cd){
+  const c={t,ps,lines,i:0,next:BT+.4,cd,done:false};
+  ps.forEach(a=>{a._cv=c;});CV.push(c);return c;
+}
+function startChat(p,q,r3,ar){
+  const pk=cvPickScript(p,q,ar);if(!pk)return;
+  const o=pk.o,L=[];
+  const add=(arr,ord)=>arr.forEach((t,i)=>{const s=ord[i%2],x=ord[(i+1)%2];L.push({a:s,t:fillT(t.trim(),x)});});
+  if(Math.random()<.6){const op=OPEN.filter(z=>!z.rm||z.rm===ar);add(rp(op).l,o);}
+  add(pk.s.lines,o);
+  if(r3){const at=Math.min(L.length,3);L.splice(at,0,{a:r3,t:rp(JOINQ)},{a:o[0],t:rp(JOINA)});}
+  cvMake('chat',[p,q].concat(r3?[r3]:[]),L,45+Math.random()*60);
+}
+function startPass(p,q){
+  const o=Math.random()<.5?[p,q]:[q,p],ln=rp(PASS),L=[];
+  ln.forEach((t,i)=>{L.push({a:o[i%2],t:fillT(t,o[(i+1)%2])});});
+  cvMake('pass',[p,q],L,80+Math.random()*60);
+}
+function startTask(k,tm,n){
+  const ow=tm.find(a=>a.id===k.owner)||tm[0],rs=tm.find(a=>a!==ow);
+  const T=k.text,bank=n===0?SERK:SERP;
+  const L=[{a:ow,t:rp(bank[ow.id]||bank.claude).replace(/\{T\}/g,T)},{a:rs,t:rp(SERR[rs.id]||SERR.claude)},{a:ow,t:rp(SERA)}];
+  cvMake('task',tm,L,0);
+}
+function cvExitLine(a){
+  if(a.pr)return null;
+  if(a.busy>0||a.state==='work')return "Ada tugas masuk, aku ke meja dulu.";
+  if(a.state==='meet')return "Rapat mau mulai, aku ke sana dulu.";
+  if(a.state==='walk')return "Aku jalan dulu ya, nanti lanjut.";
+  return null;
+}
+function cvTick(c){
+  for(const a of c.ps){
+    let bad=false;
+    if(c.t==='task')bad=a.state!=='work'||a.pr;
+    else if(c.t==='chat')bad=a.state!=='idle'||a.pr||a.busy>0;
+    else bad=a.state==='work'||a.state==='meet'||a.pr||a.busy>0;
+    if(bad){
+      if(c.t==='chat'&&c.i>0&&c.i<c.lines.length){const e=cvExitLine(a);if(e)cvSay(a,e,3.2);}
+      return false;
+    }
+  }
+  if(BT<c.next)return true;
+  if(c.i>=c.lines.length)return false;
+  const L=c.lines[c.i++],d=1.9+Math.min(3.4,L.t.length*.055);
+  cvSay(L.a,L.t,c.i>=c.lines.length?d+1.2:d-.15);
+  c.next=BT+d;
+  return true;
+}
+function banter(dt){
+  BT+=dt;
+  AG.forEach(a=>{if(a.state==='idle'&&!a.pr&&!(a.busy>0)){if(a._is==null)a._is=BT;}else a._is=null;});
+  for(let i=CV.length-1;i>=0;i--){
+    const c=CV[i];
+    if(!cvTick(c)){
+      CV.splice(i,1);
+      c.ps.forEach(a=>{if(a._cv===c)a._cv=null;});
+      for(let x=0;x<c.ps.length;x++)for(let y=x+1;y<c.ps.length;y++)COOL[pairKey(c.ps[x],c.ps[y])]=BT+(c.cd||30);
+    }
+  }
+  if(BT<cvNext)return;
+  cvNext=BT+.7;
+  /* percakapan serius soal tugas (mode demo); di mode terhubung agen sibuk tidak ngobrol santai */
+  if(!LIVE()&&BT>=cvTaskNext){
+    cvTaskNext=BT+2;
+    const now=Date.now();
+    tasksBetween(now,now).forEach(k=>{
+      if(!(k.pickAt<=now&&now<k.doneAt-7000))return;
+      const n=TT[k.id]||0;
+      if(n>=2||now<(n===0?k.pickAt+7000:k.pickAt+(k.doneAt-k.pickAt)*.55)||BT-(TTA[k.id]||-99)<15)return;
+      const tm=(k.team||[k.owner]).map(byId).filter(a=>a&&!a._cv&&a.state==='work'&&!a.pr);
+      if(tm.length<2)return;
+      TT[k.id]=n+1;TTA[k.id]=BT;startTask(k,tm,n);
+    });
+  }
+  if(CV.length>=2)return;
+  const fr=AG.filter(cvFree);
+  for(let i=0;i<fr.length;i++)for(let j=i+1;j<fr.length;j++){
+    const p=fr[i],q=fr[j];
+    if(p._cv||q._cv||(COOL[pairKey(p,q)]||0)>BT)continue;
+    const d=Math.hypot(p.x-q.x,p.y-q.y);
+    if(p.state==='idle'&&q.state==='idle'){
+      if(BT-(p._is||BT)<2.5||BT-(q._is||BT)<2.5)continue;
+      const ap=areaOf(p),aq=areaOf(q);
+      if(!((ap===aq&&ap&&'TLBP'.includes(ap))||d<3))continue;
+      if(Math.random()>.45)continue;
+      const r3=fr.find(x=>x!==p&&x!==q&&x.state==='idle'&&areaOf(x)===ap&&ap&&'TLB'.includes(ap)&&BT-(x._is||BT)>=2.5);
+      startChat(p,q,r3,ap);return;
+    }
+    if(d<1.9&&Math.random()<.6){startPass(p,q);return;}
+  }
 }
 
 /* suara */
@@ -2676,70 +2864,36 @@ function reviseRun(rec,instr){
 }
 
 /* ---------- Supabase: simpan & sinkronkan hasil, gambar, dan skill (REST langsung, tanpa pustaka) ---------- */
-const SBK='agentOffice.supabase.v1',SBT='/rest/v1/office_data',SBB='agent-office';
-const SB_SQL=`create table if not exists public.office_data (
-  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
-  kind text not null,
-  id text not null,
-  data jsonb not null,
-  updated_at timestamptz not null default now(),
-  primary key (user_id, kind, id)
-);
-alter table public.office_data enable row level security;
-create policy "data milik sendiri" on public.office_data
-  for all to authenticated
-  using (user_id = auth.uid()) with check (user_id = auth.uid());
-
-insert into storage.buckets (id, name, public) values ('agent-office', 'agent-office', true)
-  on conflict (id) do nothing;
-create policy "unggah gambar sendiri" on storage.objects
-  for insert to authenticated
-  with check (bucket_id = 'agent-office' and (storage.foldername(name))[1] = auth.uid()::text);
-create policy "ubah gambar sendiri" on storage.objects
-  for update to authenticated
-  using (bucket_id = 'agent-office' and (storage.foldername(name))[1] = auth.uid()::text);`;
-let SB={url:'https://bcvjcobumvulyqqiuyjn.supabase.co',key:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjdmpjb2J1bXZ1bHlxcWl1eWpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2NTIzOTIsImV4cCI6MjEwODIyODM5Mn0.SjA5lEg4DYoJjKQlShEcmLNG8SwGQt3VAAmC1YmMuL4',sess:null};
-try{const g=JSON.parse(localStorage.getItem(SBK)||'{}');if(g.url)SB.url=String(g.url);if(g.key)SB.key=String(g.key).replace(/[^\x21-\x7E]/g,'');SB.sess=g.sess||null;}catch(e){}
-function sbPersist(){try{localStorage.setItem(SBK,JSON.stringify({url:SB.url,key:SB.key,sess:SB.sess}));}catch(e){}}
-const sbOn=()=>!!(SB.url&&SB.key&&SB.sess&&SB.sess.access_token);
+const SBT='/rest/v1/office_shared',SBB='agent-office';
+/* Supabase sudah tertanam: tanpa tombol, tanpa login. Data dipakai bersama lewat anon key.
+   Jalankan SQL ini sekali di SQL Editor Supabase:
+   create table if not exists public.office_shared (kind text not null, id text not null, data jsonb not null, updated_at timestamptz not null default now(), primary key (kind,id));
+   alter table public.office_shared enable row level security;
+   create policy "office bersama" on public.office_shared for all to anon using (true) with check (true);
+   insert into storage.buckets (id,name,public) values ('agent-office','agent-office',true) on conflict (id) do nothing;
+   create policy "office unggah" on storage.objects for insert to anon with check (bucket_id='agent-office');
+   create policy "office ubah" on storage.objects for update to anon using (bucket_id='agent-office'); */
+const SB={url:'https://bcvjcobumvulyqqiuyjn.supabase.co',key:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjdmpjb2J1bXZ1bHlxcWl1eWpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2NTIzOTIsImV4cCI6MjEwODIyODM5Mn0.SjA5lEg4DYoJjKQlShEcmLNG8SwGQt3VAAmC1YmMuL4'};
+const sbOn=()=>true;
 const sbKnown={skill:new Set(),result:new Set(),task:new Set(),chat:new Set()},sbLast={},sbPruned={v:false};
 const chatId=e=>e.t+'-'+e.id+'-'+hs(String(e.text||'')).toString(36);
 let sbTimer=0,sbBusy=false,sbMsg='';
-function sbStat(t,c){sbMsg=t;const e=$('#sbstat');if(e){e.textContent=t;e.className='stat'+(c?' '+c:'');}}
-function sbUI(){$('#sbdot').classList.toggle('on',sbOn());}
+let sbWarned=false;
+function sbStat(t,c){sbMsg=t;if(c==='err'&&!sbWarned){sbWarned=true;try{addMsg(byId('boss'),'Sinkron ke Supabase gagal: '+t,'hint');}catch(e){}}}
 async function sbErr(res){
   let m='';try{const j=await res.json();m=j.message||j.msg||j.error_description||j.error||'';}catch(e){}
-  if(res.status===404||/relation|schema cache|does not exist|PGRST20/i.test(m))return 'Tabel belum dibuat. Jalankan SQL penyiapan di SQL Editor Supabase dulu.';
-  if(res.status===401||res.status===403)return 'Akses ditolak ('+res.status+'). Masuk ulang, atau periksa kebijakan (RLS) dari SQL penyiapan. '+String(m).slice(0,120);
+  if(res.status===404||/relation|schema cache|does not exist|PGRST20/i.test(m))return 'Tabel belum dibuat. Jalankan SQL penyiapan (lihat komentar di kode) di SQL Editor Supabase dulu.';
+  if(res.status===401||res.status===403)return 'Akses ditolak ('+res.status+'). Periksa kebijakan (RLS) dari SQL penyiapan. '+String(m).slice(0,120);
   return 'Supabase error '+res.status+(m?': '+String(m).slice(0,160):'');
 }
-async function sbAuth(path,body){
-  const res=await fetch(SB.url+'/auth/v1/'+path,{method:'POST',headers:{apikey:SB.key,'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const j=await res.json().catch(()=>({}));
-  if(!res.ok)throw new Error(j.error_description||j.msg||j.message||('Gagal ('+res.status+')'));
-  return j;
-}
-function sbSetSess(j){
-  if(!j.access_token)return false;
-  SB.sess={access_token:j.access_token,refresh_token:j.refresh_token,exp:Date.now()+(j.expires_in||3600)*1000,uid:j.user&&j.user.id||(SB.sess&&SB.sess.uid),email:j.user&&j.user.email||(SB.sess&&SB.sess.email)};
-  sbPersist();return true;
-}
-async function sbRefresh(){
-  if(!SB.sess||!SB.sess.refresh_token)return false;
-  try{const j=await sbAuth('token?grant_type=refresh_token',{refresh_token:SB.sess.refresh_token});return sbSetSess(j);}catch(e){SB.sess=null;sbPersist();sbUI();return false;}
-}
-async function sbFetch(path,opts,retry){
-  if(SB.sess&&SB.sess.exp&&Date.now()>SB.sess.exp-60000)await sbRefresh();
-  if(!sbOn())throw new Error('Belum masuk ke Supabase.');
+async function sbFetch(path,opts){
   opts=opts||{};
-  const res=await fetch(SB.url+path,Object.assign({},opts,{headers:Object.assign({apikey:SB.key,Authorization:'Bearer '+SB.sess.access_token},opts.headers||{})}));
-  if(res.status===401&&retry!==false&&await sbRefresh())return sbFetch(path,opts,false);
-  return res;
+  return fetch(SB.url+path,Object.assign({},opts,{headers:Object.assign({apikey:SB.key,Authorization:'Bearer '+SB.key},opts.headers||{})}));
 }
 async function sbUpsert(kind,items){
   if(!items.length)return;
-  const rows=items.map(i=>({user_id:SB.sess.uid,kind,id:i.id,data:i.data,updated_at:new Date().toISOString()}));
-  const res=await sbFetch(SBT+'?on_conflict=user_id,kind,id',{method:'POST',headers:{'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(rows)});
+  const rows=items.map(i=>({kind,id:i.id,data:i.data,updated_at:new Date().toISOString()}));
+  const res=await sbFetch(SBT+'?on_conflict=kind,id',{method:'POST',headers:{'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(rows)});
   if(!res.ok)throw new Error(await sbErr(res));
 }
 async function sbDelete(kind,id){
@@ -2747,7 +2901,7 @@ async function sbDelete(kind,id){
   if(!res.ok)throw new Error(await sbErr(res));
 }
 async function sbUploadImg(dataUrl,name){
-  const blob=await (await fetch(dataUrl)).blob(),path=SB.sess.uid+'/'+name+'.png';
+  const blob=await (await fetch(dataUrl)).blob(),path='shared/'+name+'.png';
   const res=await sbFetch('/storage/v1/object/'+SBB+'/'+path,{method:'POST',headers:{'Content-Type':blob.type||'image/png','x-upsert':'true'},body:blob});
   if(!res.ok){const m=await sbErr(res);throw new Error(/Tabel belum/.test(m)?'Bucket gambar belum dibuat. Jalankan SQL penyiapan.':m);}
   return SB.url+'/storage/v1/object/public/'+SBB+'/'+path;
@@ -2781,7 +2935,7 @@ async function sbFlush(){
       if(!sbPruned.v){sbPruned.v=true;const old=new Date(Date.now()-2*86400e3).toISOString();await sbFetch(SBT+'?kind=eq.chat&updated_at=lt.'+encodeURIComponent(old),{method:'DELETE'});}
     }
     if(changed){try{localStorage.setItem(RSK,JSON.stringify(rSer(results.slice(-30))));}catch(e){}}
-    sbStat('Tersinkron '+new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})+' · '+SB.sess.email,'ok');
+    sbStat('Tersinkron '+new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})+'','ok');
   }catch(e){sbStat(e.message||'Sinkron gagal.','err');}
   finally{sbBusy=false;}
 }
@@ -2828,38 +2982,7 @@ async function sbSync(){
   try{await sbFlush();const n=await sbPull();if(n&&sbMsg.indexOf('Tersinkron')===0)sbStat(sbMsg+' · '+n+' item dari perangkat lain','ok');}
   catch(e){sbStat(e.message||'Sinkron gagal.','err');}
 }
-function sbOpen(){
-  $('#sburl').value=SB.url;$('#sbkey').value=SB.key;$('#sbemail').value=(SB.sess&&SB.sess.email)||$('#sbemail').value;$('#sbpass').value='';
-  $('#sbsqlpre').textContent=SB_SQL;
-  if(!sbMsg)sbStat(sbOn()?'Masuk sebagai '+SB.sess.email:'Belum masuk.','');
-  $('#gsb').hidden=false;
-}
-function sbReadForm(){
-  let u=$('#sburl').value.trim().replace(/\/+$/,''),k=$('#sbkey').value.replace(/[^\x21-\x7E]/g,'');
-  if(!/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)$/i.test(u)&&!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(u))throw new Error('Project URL harus berbentuk https://xxxx.supabase.co');
-  if(k.length<20)throw new Error('Anon key belum diisi.');
-  if(SB.url!==u||SB.key!==k)SB.sess=null;
-  SB.url=u;SB.key=k;
-  return {email:$('#sbemail').value.trim(),password:$('#sbpass').value};
-}
-async function sbLogin(signup){
-  try{
-    const {email,password}=sbReadForm();
-    if(!email||password.length<6)throw new Error('Isi email dan kata sandi (minimal 6 karakter).');
-    sbStat(signup?'Mendaftar…':'Masuk…','');
-    const j=signup?await sbAuth('signup',{email,password}):await sbAuth('token?grant_type=password',{email,password});
-    if(!sbSetSess(j)){SB.sess=null;sbPersist();sbUI();sbStat('Pendaftaran berhasil. Cek email untuk konfirmasi, lalu tekan Masuk.','warn');return;}
-    sbPersist();sbUI();$('#sbpass').value='';
-    await sbSync();
-  }catch(e){sbStat(e.message,'err');}
-}
-$('#sbbtn').addEventListener('click',sbOpen);
-$('#sbin').addEventListener('click',()=>sbLogin(false));
-$('#sbup').addEventListener('click',()=>sbLogin(true));
-$('#sbsync').addEventListener('click',async()=>{try{sbReadForm();}catch(e){sbStat(e.message,'err');return;}if(!sbOn()){sbStat('Masuk dulu.','err');return;}sbPersist();await sbSync();});
-$('#sbout').addEventListener('click',()=>{SB.sess=null;sbPersist();sbUI();sbStat('Keluar. Data lokal di browser ini tetap ada.','');});
-$('#sbsql').addEventListener('click',function(){copyTxt(SB_SQL,this);});
-sbUI();if(sbOn())setTimeout(sbSync,1500);
+setTimeout(sbSync,1500);
 
 function htmlOf(t){const m=t.match(/```html[^\n]*\n([\s\S]*?)```/i)||t.match(/```html[^\n]*\n([\s\S]*)$/i);return m?m[1].trim():'';}
 
