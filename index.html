@@ -253,6 +253,13 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
     <label class="fld"><span>Model DeepSeek</span><input id="dsmodel" list="dsmodels" autocomplete="off" spellcheck="false" placeholder="deepseek-chat"></label>
     <datalist id="dsmodels"><option value="deepseek-chat"><option value="deepseek-reasoner"></datalist>
    </div>
+   <div id="esec">
+    <p class="note">Eden AI (khusus gambar): buat key di <a href="https://app.edenai.run" target="_blank" rel="noopener noreferrer">app.edenai.run</a>. Memakai kredit akun Eden AI. Perlu key teks (Gemini atau DeepSeek) juga untuk carousel dan teks.</p>
+    <label class="fld"><span>API key Eden AI</span><div class="row"><input id="edkey" type="password" autocomplete="off" spellcheck="false" placeholder="eyJ..."><button class="mini" id="edshow" type="button">Lihat</button></div></label>
+    <label class="fld"><span>Model gambar Eden AI (provider/model)</span><input id="edmodel" list="edmodels" autocomplete="off" spellcheck="false" placeholder="openai/gpt-image-1-mini"></label>
+    <datalist id="edmodels"><option value="openai/gpt-image-1-mini"><option value="openai/gpt-image-1"><option value="vertex/gemini-2.5-flash-image"><option value="stabilityai/sd3.5-large"><option value="amazon/amazon.nova-canvas-v1:0"></datalist>
+    <label class="fld"><span>Pembuat gambar</span><select id="eduse" style="width:100%;background:#0f1116;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:9px 11px;font:inherit;font-size:16px"><option value="auto">Otomatis (Gemini bila ada, kalau tidak Eden AI)</option><option value="eden">Selalu Eden AI</option></select></label>
+   </div>
    <p class="stat" id="gstat" aria-live="polite"></p>
   </div>
   <div class="df"><button class="mini pri" id="gsave" type="button">Simpan &amp; tes koneksi</button><button class="mini" id="gclear" type="button">Hapus kunci</button></div>
@@ -2910,11 +2917,14 @@ function tryAdhanPending(){
 const GSK='agentOffice.gemini.v1',RSK='agentOffice.results.v1',GAPI='https://generativelanguage.googleapis.com/v1beta/';
 const GM={key:'',model:'gemini-flash-latest',provider:'gemini'};
 const DS={key:'',model:'deepseek-chat'};
+const EDEN={key:'',model:'openai/gpt-image-1-mini',use:'auto'};
+const IMGOK=()=>!!(GM.key||EDEN.key);
+const useEden=()=>!!EDEN.key&&(EDEN.use==='eden'||!GM.key);
 const HAS=()=>!!(GM.key||DS.key);
 const useDS=()=>!!DS.key&&(GM.provider==='deepseek'||!GM.key);
 const provName=()=>useDS()?'DeepSeek':'Gemini';
-try{const g=JSON.parse(localStorage.getItem(GSK)||'{}');GM.key=String(g.key||'').replace(/[^\x21-\x7E]/g,'');GM.model=g.model||GM.model;DS.key=String(g.dsKey||'').replace(/[^\x21-\x7E]/g,'');DS.model=g.dsModel||DS.model;GM.provider=g.provider||(g.key?'gemini':(g.dsKey?'deepseek':'gemini'));}catch(e){}
-function gSave(){try{localStorage.setItem(GSK,JSON.stringify({key:GM.key,model:GM.model,dsKey:DS.key,dsModel:DS.model,provider:GM.provider}));}catch(e){}}
+try{const g=JSON.parse(localStorage.getItem(GSK)||'{}');GM.key=String(g.key||'').replace(/[^\x21-\x7E]/g,'');GM.model=g.model||GM.model;DS.key=String(g.dsKey||'').replace(/[^\x21-\x7E]/g,'');DS.model=g.dsModel||DS.model;GM.provider=g.provider||(g.key?'gemini':(g.dsKey?'deepseek':'gemini'));EDEN.key=String(g.edKey||'').replace(/[^\x21-\x7E]/g,'');EDEN.model=g.edModel||EDEN.model;EDEN.use=g.edUse||'auto';}catch(e){}
+function gSave(){try{localStorage.setItem(GSK,JSON.stringify({key:GM.key,model:GM.model,dsKey:DS.key,dsModel:DS.model,provider:GM.provider,edKey:EDEN.key,edModel:EDEN.model,edUse:EDEN.use}));}catch(e){}}
 let results=[];try{results=JSON.parse(localStorage.getItem(RSK)||'[]');if(!Array.isArray(results))results=[];}catch(e){results=[];}
 function rSer(list){let used=0;return list.slice().reverse().map(r=>{if(!r.imgs)return r;const n=r.imgs.reduce((q,u)=>q+u.length,0);if(used+n>1500000)return Object.assign({},r,{imgs:undefined,imgLost:true});used+=n;return r;}).reverse();}
 function rSave(){sbSchedule();try{localStorage.setItem(RSK,JSON.stringify(rSer(results.slice(-30))));}catch(e){try{results=results.slice(-8);localStorage.setItem(RSK,JSON.stringify(rSer(results).map(r=>Object.assign({},r,{imgs:undefined}))));}catch(_){}}}
@@ -3091,7 +3101,28 @@ async function toInline(u){
   const m=/^data:(.+?);base64,(.*)$/.exec(u);if(m)return {inlineData:{mimeType:m[1],data:m[2]}};
   try{const b=await (await fetch(u)).blob();const d=await new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(b);});const mm=/^data:(.+?);base64,(.*)$/.exec(d);return mm?{inlineData:{mimeType:mm[1],data:mm[2]}}:null;}catch(e){return null;}
 }
+
+/* ---------- Eden AI (gambar, endpoint kompatibel OpenAI) ---------- */
+async function edenImage(a,prompt,signal,refs,opts){
+  const r=opts.ratio||'',size=r==='16:9'?'1536x1024':(r==='9:16'||r==='4:5')?'1024x1536':'1024x1024';
+  const body={model:EDEN.model,prompt:skPrompt(a,prompt,true)+prompt,n:1,response_format:'b64_json'};
+  if(!opts.noSize)body.size=size;
+  let res;
+  try{res=await fetch('https://api.edenai.run/v3/images/generations',{method:'POST',signal,headers:{'Content-Type':'application/json',Authorization:'Bearer '+EDEN.key},body:JSON.stringify(body)});}
+  catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error('Tidak bisa menghubungi Eden AI. Periksa koneksi internet, VPN, atau ekstensi pemblokir. (Jika terus terjadi, kemungkinan Eden AI tidak mengizinkan panggilan langsung dari browser.)');er.net=1;throw er;}
+  if(!res.ok){
+    let m='';try{const j=await res.json();m=(j.error&&(j.error.message||j.error))||j.detail||j.message||'';if(typeof m!=='string')m=JSON.stringify(m);}catch(e){}
+    if(res.status===400&&!opts.noSize)return edenImage(a,prompt,signal,refs,Object.assign({},opts,{noSize:1}));
+    const c=res.status,er=new Error(c===401?'API key Eden AI tidak valid (401).':c===402?'Kredit Eden AI habis (402). Isi kredit di dashboard Eden AI.':c===429?'Limit Eden AI penuh (429). Coba lagi sebentar.':'Eden AI error '+c+(m?': '+m.slice(0,200):''));
+    er.code=c;throw er;
+  }
+  const j=await res.json(),imgs=[];
+  (j.data||[]).forEach(d=>{if(d.b64_json)imgs.push('data:image/'+(j.output_format||'png')+';base64,'+d.b64_json);else if(d.url)imgs.push(d.url);});
+  if(!imgs.length)throw new Error('Eden AI tidak mengembalikan gambar. Coba ganti model atau ubah deskripsinya.');
+  return {text:'',imgs,finish:'',model:EDEN.model};
+}
 async function gImage(a,prompt,signal,refs,opts){
+  if(useEden())return edenImage(a,prompt,signal,refs,opts||{});
   opts=opts||{};let lastErr=null;
   const refParts=(await Promise.all((refs||[]).slice(0,3).map(toInline))).filter(Boolean);
   const all=await imgModelList(signal);
@@ -3257,7 +3288,7 @@ function reviseBox(rec,onSend){
 }
 function reviseRun(rec,instr){
   if(!HAS()){addMsg(boss,'Revisi butuh AI yang aktif (Gemini atau DeepSeek). Klik tombol AI KEY di bawah chat.','hint');return;}
-  if(rec.imgs&&rec.imgs.length&&!rec.carousel&&!GM.key){addMsg(boss,'Merevisi gambar butuh Gemini. Anda bisa minta gambar baru dengan /gambar.','hint');return;}
+  if(rec.imgs&&rec.imgs.length&&!rec.carousel&&!IMGOK()){addMsg(boss,'Merevisi gambar butuh Gemini atau Eden AI. Anda bisa minta gambar baru dengan /gambar.','hint');return;}
   const a=byId(rec.agent)||AG[1],img=!!(rec.imgs&&rec.imgs.length),orig=rec.orig||rec.prompt,h=!!htmlOf(rec.text);
   if(rec.carousel){addMsg(boss,'Revisi untuk '+a.name+': '+instr,'sys',Date.now(),true);carouselRun(a,orig+'\n\nRevisi dari CEO (terapkan pada seluruh slide): '+instr+(rec.text?'\n\nCaption sebelumnya:\n'+rec.text.slice(0,1500):''),null,{title:'Revisi: '+instr.slice(0,80),from:rec});return;}
   const prompt='Ini REVISI atas hasil kerjamu sebelumnya.\nPermintaan awal CEO: "'+orig+'"\n\nHasil sebelumnya:\n'+rec.text.slice(0,40000)+'\n\nInstruksi revisi dari CEO: '+instr+'\n\nTerapkan revisi lalu berikan hasil lengkap yang sudah diperbarui, bukan hanya bagian yang berubah.'+(h?' Berikan SATU file HTML lengkap dalam satu blok ```html.':'')+(img?' Ubah gambar yang dilampirkan sesuai instruksi.':'');
@@ -3712,7 +3743,7 @@ async function teamRun(lead,full,ut,alt){
 
 
 /* ---------- cadangan: bila model gambar tidak bisa dipakai (kuota habis, akun gratis), slide dibuat sebagai grafis SVG oleh model teks lalu diubah jadi PNG ---------- */
-const isQuotaErr=e=>!!e&&(e.code===429||e.code===403||e.noModel);
+const isQuotaErr=e=>!!e&&(e.code===429||e.code===403||e.code===402||e.noModel);
 function dimsOf(ratio){return ratio==='4:5'?[1080,1350]:ratio==='9:16'?[1080,1920]:ratio==='16:9'?[1600,900]:[1080,1080];}
 function svgToPng(svg,W,H){
   return new Promise((res,rej)=>{
@@ -3764,7 +3795,7 @@ async function carouselRun(a,prompt,ut,meta){
       if(ac.signal.aborted)throw Object.assign(new Error('x'),{name:'AbortError'});
       r.tx.classList.add('wait');r.tx.textContent='Membuat slide '+(i+1)+' dari '+slides.length+'…';
       const sl=slides[i],ip='Buat SATU GAMBAR desain slide carousel Instagram, rasio 4:5 vertikal. Konteks: '+prompt+'. Gaya visual yang seragam di semua slide: '+style+'. Ini slide '+(i+1)+' dari '+slides.length+'. Teks yang HARUS tampil di gambar, besar, tebal, mudah dibaca, dengan ejaan persis: judul "'+(sl.title||'')+'"'+(sl.text?' dan teks "'+sl.text+'"':'')+'. Visual: '+(sl.visual||'')+'.'+(i?' Samakan gaya, warna, dan tipografi dengan gambar referensi terlampir.':'')+' Keluaran harus berupa gambar, bukan teks.';
-      if(!GM.key){svgMode=true;break;}
+      if(!IMGOK()){svgMode=true;break;}
       try{const o=await gImage(a,ip,ac.signal,i&&imgs[0]?[imgs[0]]:null,{ratio:'4:5'});imgs.push(o.imgs[0]);if(i<slides.length-1)await sleep(1200);}
       catch(e){if(e&&e.name==='AbortError')throw e;if(!imgs.length&&isQuotaErr(e)){svgMode=true;break;}failed++;if(!imgs.length&&i>=1&&failed>=2)throw e;}
     }
@@ -3801,7 +3832,7 @@ async function gemRun(a,prompt,task,ut,mode,meta){
  try{
   if(img){r.tx.classList.add('wait');r.tx.textContent='Sedang membuat gambar…';}
   let svgUsed=false;
-  const out=img?await (GM.key?gImage(a,prompt,ac.signal,meta&&meta.refs,{ratio:meta?'':inferRatio(prompt)}):Promise.reject(Object.assign(new Error('x'),{noModel:true}))).catch(async e=>{
+  const out=img?await (IMGOK()?gImage(a,prompt,ac.signal,meta&&meta.refs,{ratio:meta?'':inferRatio(prompt)}):Promise.reject(Object.assign(new Error('x'),{noModel:true}))).catch(async e=>{
     if(!isQuotaErr(e)||(meta&&meta.refs&&meta.refs.length)||(e&&e.name==='AbortError'))throw e;
     r.tx.classList.add('wait');r.tx.textContent='Membuat gambar sebagai grafis vektor…';
     svgUsed=true;
@@ -3939,20 +3970,23 @@ function openSet(){
  $('#gmodel').value=GM.model;
  $('#dskey').value=DS.key;$('#dskey').type='password';$('#dsshow').textContent='Lihat';
  $('#dsmodel').value=DS.model;
+ $('#edkey').value=EDEN.key;$('#edkey').type='password';$('#edshow').textContent='Lihat';$('#edmodel').value=EDEN.model;$('#eduse').value=EDEN.use;
  stat(HAS()?'Kunci tersimpan di browser ini. Aktif: '+provName()+'.':'','');
  $('#gset').hidden=false;setTimeout(()=>$('#gprov').focus(),30);
 }
 $('#gbtn').addEventListener('click',openSet);
 $('#gshow').addEventListener('click',()=>{const k=$('#gkey'),sh=k.type==='password';k.type=sh?'text':'password';$('#gshow').textContent=sh?'Sembunyi':'Lihat';});
+$('#edshow').addEventListener('click',()=>{const k=$('#edkey'),sh=k.type==='password';k.type=sh?'text':'password';$('#edshow').textContent=sh?'Sembunyi':'Lihat';});
 $('#dsshow').addEventListener('click',()=>{const k=$('#dskey'),sh=k.type==='password';k.type=sh?'text':'password';$('#dsshow').textContent=sh?'Sembunyi':'Lihat';});
 $('#gsave').addEventListener('click',async()=>{
  const gk=$('#gkey').value.replace(/[^\x21-\x7E]/g,''),gm=$('#gmodel').value.trim()||'gemini-flash-latest';
  const dk=$('#dskey').value.replace(/[^\x21-\x7E]/g,''),dm=$('#dsmodel').value.trim()||'deepseek-chat';
  let prov=$('#gprov').value;
- if(!gk&&!dk){stat('Masukkan minimal satu API key (Gemini atau DeepSeek).','err');return;}
+ const ek=$('#edkey').value.replace(/[^\x21-\x7E]/g,''),em=$('#edmodel').value.trim()||'openai/gpt-image-1-mini';
+ if(!gk&&!dk){stat('Masukkan minimal satu API key teks (Gemini atau DeepSeek). Eden AI hanya untuk gambar.','err');return;}
  if(prov==='deepseek'&&!dk){stat('Penyedia DeepSeek dipilih tapi API key DeepSeek kosong.','err');return;}
  if(prov==='gemini'&&!gk){prov='deepseek';}
- GM.key=gk;GM.model=gm;DS.key=dk;DS.model=dm;GM.provider=prov;gSave();gUI();stat('Menguji koneksi…','');
+ GM.key=gk;GM.model=gm;DS.key=dk;DS.model=dm;GM.provider=prov;EDEN.key=ek;EDEN.model=em;EDEN.use=$('#eduse').value;gSave();gUI();stat('Menguji koneksi…','');
  const msgs=[];let bad=false;
  if(dk){
   try{const ms=await dsModels();msgs.push('DeepSeek terhubung ('+ms.length+' model).');}
@@ -3965,9 +3999,10 @@ $('#gsave').addEventListener('click',async()=>{
    else{msgs.push('Gemini terhubung, tapi model "'+gm+'" tidak ada di akun Anda ('+ms.length+' model tersedia).');}
   }catch(e){msgs.push(e.message);bad=true;if(/API key tidak valid/.test(e.message)){GM.key='';gSave();gUI();}}
  }
+ if(ek)msgs.push('Eden AI tersimpan (model '+em+'); keabsahan key diuji saat membuat gambar pertama.');
  stat(msgs.join(' ')+(HAS()?' Aktif: '+provName()+'. Tutup jendela ini lalu kirim perintah.':''),bad?(HAS()?'warn':'err'):'ok');
 });
-$('#gclear').addEventListener('click',()=>{GM.key='';DS.key='';GM.provider='gemini';gSave();gUI();$('#gkey').value='';$('#dskey').value='';hist={};stat('Semua kunci dihapus dari browser ini.','');});
+$('#gclear').addEventListener('click',()=>{GM.key='';DS.key='';EDEN.key='';GM.provider='gemini';gSave();gUI();$('#gkey').value='';$('#dskey').value='';$('#edkey').value='';hist={};stat('Semua kunci dihapus dari browser ini.','');});
 
 /* kolom pesan */
 {
@@ -4007,7 +4042,7 @@ function respond(txt,forced){
   const gm=txt.match(/^\/gambar\b\s*(.*)/i),wantImg=!!gm||isImgReq(txt);
   if(gm&&!gm[1].trim()){addMsg(byId('boss'),'Contoh: /gambar kucing astronot di bulan, gaya pixel art','hint');return;}
   if(wantImg&&!HAS()){addMsg(byId('boss'),'Membuat gambar butuh AI. Klik tombol AI KEY di bawah chat lalu masukkan API key Gemini atau DeepSeek.','hint');return;}
-  if(wantImg&&!GM.key&&!window.__dsImgHint){window.__dsImgHint=1;addMsg(byId('boss'),'Tanpa Gemini, gambar dibuat sebagai grafis vektor (SVG) oleh DeepSeek: cocok untuk poster, infografis, dan slide, tapi bukan foto realistis.','hint');}
+  if(wantImg&&!IMGOK()&&!window.__dsImgHint){window.__dsImgHint=1;addMsg(byId('boss'),'Tanpa Gemini atau Eden AI, gambar dibuat sebagai grafis vektor (SVG) oleh model teks: cocok untuk poster, infografis, dan slide, tapi bukan foto realistis.','hint');}
   if(HAS()&&wantImg&&isCarouselReq(txt)){carouselRun(forced||byId('nova'),txt,null);return;}
   if(HAS()){gemRun(forced||(wantImg?byId('nova'):pickAgent(txt)),gm?gm[1].trim():txt,false,null,wantImg?'img':undefined);return;}
   if(!HAS()&&skills.some(k=>k.on)&&!window.__skHint){window.__skHint=1;addMsg(byId('boss'),'Skill yang Anda unggah baru berpengaruh setelah Gemini atau DeepSeek terhubung. Sekarang balasan agen masih simulasi.','hint');}
