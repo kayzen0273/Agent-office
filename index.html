@@ -218,7 +218,7 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
     </div>
     <div class="msgs" id="msgs" aria-live="polite"></div>
     <div class="tools">
-      <button class="chip" id="gbtn" type="button" title="Hubungkan ke Gemini / Google AI Studio"><i id="gdot"></i>GEMINI</button>
+      <button class="chip" id="gbtn" type="button" title="Hubungkan ke Gemini atau DeepSeek"><i id="gdot"></i>AI KEY</button>
       <button class="chip" id="rbtn" type="button" title="Riwayat hasil kerja agen">HASIL <b id="rcount">0</b></button>
       <button class="chip" id="sbtn" type="button" title="Unggah skill untuk agen">SKILL <b id="scount">0</b></button>
       <span class="mn" id="mentions"></span>
@@ -237,12 +237,22 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
 
 <div class="ov" id="gset" hidden>
  <div class="dlg sm" role="dialog" aria-modal="true" aria-labelledby="gsett">
-  <div class="dh"><h2 id="gsett">Hubungkan Gemini</h2><button class="mini" type="button" data-x>Tutup</button></div>
+  <div class="dh"><h2 id="gsett">Hubungkan AI</h2><button class="mini" type="button" data-x>Tutup</button></div>
   <div class="db">
-   <p class="note">Buat API key gratis di <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>, lalu tempel di sini. Kunci hanya disimpan di browser ini dan dikirim langsung ke Google, tidak lewat server lain.</p>
-   <label class="fld"><span>API key</span><div class="row"><input id="gkey" type="password" autocomplete="off" spellcheck="false" placeholder="AIza..."><button class="mini" id="gshow" type="button">Lihat</button></div></label>
-   <label class="fld"><span>Model (ketik atau pilih dari daftar)</span><input id="gmodel" list="gmodels" autocomplete="off" spellcheck="false" placeholder="gemini-flash-latest"></label>
-   <datalist id="gmodels"></datalist>
+   <p class="note">Kunci hanya disimpan di browser ini dan dikirim langsung ke penyedianya, tidak lewat server lain.</p>
+   <label class="fld"><span>Penyedia untuk teks &amp; tugas</span><select id="gprov" style="width:100%;background:#0f1116;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:9px 11px;font:inherit;font-size:16px"><option value="gemini">Gemini (Google AI Studio)</option><option value="deepseek">DeepSeek</option></select></label>
+   <div id="gsec">
+    <p class="note">Gemini: buat API key gratis di <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>. Wajib untuk fitur gambar dan carousel.</p>
+    <label class="fld"><span>API key Gemini</span><div class="row"><input id="gkey" type="password" autocomplete="off" spellcheck="false" placeholder="AIza..."><button class="mini" id="gshow" type="button">Lihat</button></div></label>
+    <label class="fld"><span>Model Gemini (ketik atau pilih dari daftar)</span><input id="gmodel" list="gmodels" autocomplete="off" spellcheck="false" placeholder="gemini-flash-latest"></label>
+    <datalist id="gmodels"></datalist>
+   </div>
+   <div id="dsec">
+    <p class="note">DeepSeek: buat API key di <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer">platform.deepseek.com</a> (butuh saldo). Hanya untuk teks, kode, dan HTML; gambar tetap lewat Gemini.</p>
+    <label class="fld"><span>API key DeepSeek</span><div class="row"><input id="dskey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-..."><button class="mini" id="dsshow" type="button">Lihat</button></div></label>
+    <label class="fld"><span>Model DeepSeek</span><input id="dsmodel" list="dsmodels" autocomplete="off" spellcheck="false" placeholder="deepseek-chat"></label>
+    <datalist id="dsmodels"><option value="deepseek-chat"><option value="deepseek-reasoner"></datalist>
+   </div>
    <p class="stat" id="gstat" aria-live="polite"></p>
   </div>
   <div class="df"><button class="mini pri" id="gsave" type="button">Simpan &amp; tes koneksi</button><button class="mini" id="gclear" type="button">Hapus kunci</button></div>
@@ -368,7 +378,7 @@ function meetPlan(b){
   return ids.length<2?null:{t0,t1,topic,ids};
 }
 const byId=id=>AG.find(a=>a.id===id);
-function LIVE(){try{return !!GM.key;}catch(e){return false;}}
+function LIVE(){try{return HAS();}catch(e){return false;}}
 
 const DESKS=[
  {x:2,y:2.2,w:2.6,d:1.3,mons:3},
@@ -2898,9 +2908,13 @@ function tryAdhanPending(){
 
 /* ---------- Gemini (Google AI Studio) ---------- */
 const GSK='agentOffice.gemini.v1',RSK='agentOffice.results.v1',GAPI='https://generativelanguage.googleapis.com/v1beta/';
-const GM={key:'',model:'gemini-flash-latest'};
-try{const g=JSON.parse(localStorage.getItem(GSK)||'{}');GM.key=String(g.key||'').replace(/[^\x21-\x7E]/g,'');GM.model=g.model||GM.model;}catch(e){}
-function gSave(){try{localStorage.setItem(GSK,JSON.stringify({key:GM.key,model:GM.model}));}catch(e){}}
+const GM={key:'',model:'gemini-flash-latest',provider:'gemini'};
+const DS={key:'',model:'deepseek-chat'};
+const HAS=()=>!!(GM.key||DS.key);
+const useDS=()=>!!DS.key&&(GM.provider==='deepseek'||!GM.key);
+const provName=()=>useDS()?'DeepSeek':'Gemini';
+try{const g=JSON.parse(localStorage.getItem(GSK)||'{}');GM.key=String(g.key||'').replace(/[^\x21-\x7E]/g,'');GM.model=g.model||GM.model;DS.key=String(g.dsKey||'').replace(/[^\x21-\x7E]/g,'');DS.model=g.dsModel||DS.model;GM.provider=g.provider||(g.key?'gemini':(g.dsKey?'deepseek':'gemini'));}catch(e){}
+function gSave(){try{localStorage.setItem(GSK,JSON.stringify({key:GM.key,model:GM.model,dsKey:DS.key,dsModel:DS.model,provider:GM.provider}));}catch(e){}}
 let results=[];try{results=JSON.parse(localStorage.getItem(RSK)||'[]');if(!Array.isArray(results))results=[];}catch(e){results=[];}
 function rSer(list){let used=0;return list.slice().reverse().map(r=>{if(!r.imgs)return r;const n=r.imgs.reduce((q,u)=>q+u.length,0);if(used+n>1500000)return Object.assign({},r,{imgs:undefined,imgLost:true});used+=n;return r;}).reverse();}
 function rSave(){sbSchedule();try{localStorage.setItem(RSK,JSON.stringify(rSer(results.slice(-30))));}catch(e){try{results=results.slice(-8);localStorage.setItem(RSK,JSON.stringify(rSer(results).map(r=>Object.assign({},r,{imgs:undefined}))));}catch(_){}}}
@@ -2922,7 +2936,7 @@ function sysPrompt(a,task,prompt){
 const ALTS=['audit dulu bagian yang paling sering dipakai, supaya hasilnya tepat sasaran','buat versi ringkas dulu agar bisa ditinjau lebih cepat','tambahkan tes otomatis sekalian supaya tidak muncul regresi nanti','cek dulu apakah sudah ada komponen serupa yang bisa dipakai ulang'];
 async function proposeTask(who,full,ut){
   const title=ut.text;let alt=null,body;
-  if(GM.key){
+  if(HAS()){
     who.bubble={text:'Menyusun usulan…',ttl:2};
     const out=await gemRun(who,'CEO memberi tugas: "'+full+'". JANGAN kerjakan dulu, tunggu persetujuan CEO. Balas maksimal 3 kalimat berisi rencana singkat pengerjaan. Jika ada cara yang lebih berguna daripada permintaan persis itu, tulis satu baris terpisah diawali "USULAN:" berisi alternatifnya. Jika permintaan sudah paling tepat, jangan tulis USULAN.',false,null,undefined,{noRec:true});
     const mm=out&&out.match(/USULAN:\s*(.+)/i);if(mm)alt=mm[1].trim();
@@ -2941,7 +2955,7 @@ async function proposeTask(who,full,ut){
     ut.ap='ok';ut.at=Date.now();save();refreshTasks(Date.now());
     acts.textContent=label;
     addMsg(boss,'Disetujui: '+title+(prompt!==full?' (sesuai usulan)':''),'sys',Date.now(),true);
-    if(GM.key&&!isImgReq(full))teamRun(who,full,ut,prompt!==full?alt:null);else if(GM.key){if(isCarouselReq(full))carouselRun(who,prompt,ut);else gemRun(who,prompt,true,ut,'img');}else if(isImgReq(full))speak(who,'Saya butuh Gemini untuk membuat gambarnya. Hubungkan GEMINI dulu ya.',Date.now(),true);else speak(who,'Siap, mulai dikerjakan bersama tim.',Date.now(),true);
+    if(HAS()&&!isImgReq(full))teamRun(who,full,ut,prompt!==full?alt:null);else if(GM.key){if(isCarouselReq(full))carouselRun(who,prompt,ut);else gemRun(who,prompt,true,ut,'img');}else if(isImgReq(full))speak(who,'Saya butuh Gemini untuk membuat gambarnya. Hubungkan GEMINI dulu ya.',Date.now(),true);else speak(who,'Siap, mulai dikerjakan bersama tim.',Date.now(),true);
   };
   const no=()=>{
     if(ut.ap!=='pending')return;
@@ -3242,7 +3256,8 @@ function reviseBox(rec,onSend){
   box.append(ta,ch);return box;
 }
 function reviseRun(rec,instr){
-  if(!GM.key){addMsg(boss,'Revisi butuh Gemini yang aktif. Klik tombol GEMINI di bawah chat.','hint');return;}
+  if(!HAS()){addMsg(boss,'Revisi butuh AI yang aktif (Gemini atau DeepSeek). Klik tombol AI KEY di bawah chat.','hint');return;}
+  if(rec.imgs&&rec.imgs.length&&!GM.key){addMsg(boss,'Merevisi gambar butuh Gemini. DeepSeek hanya untuk teks.','hint');return;}
   const a=byId(rec.agent)||AG[1],img=!!(rec.imgs&&rec.imgs.length),orig=rec.orig||rec.prompt,h=!!htmlOf(rec.text);
   if(rec.carousel){addMsg(boss,'Revisi untuk '+a.name+': '+instr,'sys',Date.now(),true);carouselRun(a,orig+'\n\nRevisi dari CEO (terapkan pada seluruh slide): '+instr+(rec.text?'\n\nCaption sebelumnya:\n'+rec.text.slice(0,1500):''),null,{title:'Revisi: '+instr.slice(0,80),from:rec});return;}
   const prompt='Ini REVISI atas hasil kerjamu sebelumnya.\nPermintaan awal CEO: "'+orig+'"\n\nHasil sebelumnya:\n'+rec.text.slice(0,40000)+'\n\nInstruksi revisi dari CEO: '+instr+'\n\nTerapkan revisi lalu berikan hasil lengkap yang sudah diperbarui, bukan hanya bagian yang berubah.'+(h?' Berikan SATU file HTML lengkap dalam satu blok ```html.':'')+(img?' Ubah gambar yang dilampirkan sesuai instruksi.':'');
@@ -3509,6 +3524,7 @@ async function gOnce(a,prompt,task,signal,model){
 const GFALL=['gemini-flash-latest','gemini-2.5-flash','gemini-flash-lite-latest','gemini-2.5-flash-lite'];
 const sleep=(ms,sig)=>new Promise((ok,no)=>{const t=setTimeout(ok,ms);if(sig)sig.addEventListener('abort',()=>{clearTimeout(t);no(new DOMException('Aborted','AbortError'));},{once:true});});
 async function gStream(a,prompt,task,signal,onText,onStatus){
+ if(useDS())return dsStream(a,prompt,task,signal,onText,onStatus);
  const note=m=>{try{onStatus&&onStatus(m);}catch(e){}};
  const DELAYS=[2,4,8,15,20,30,30,45,60,60];   // detik; total sekitar 4 menit sebelum menyerah
  let lastErr=null,clearedHist=false;
@@ -3549,6 +3565,76 @@ async function gStream(a,prompt,task,signal,onText,onStatus){
   }
  }
  throw lastErr||new Error('Gagal menghubungi Gemini.');
+}
+
+/* ---------- DeepSeek (OpenAI-compatible, hanya teks) ---------- */
+const DSAPI='https://api.deepseek.com/';
+async function dsErr(res){
+ let m='';try{const j=await res.json();m=(j.error&&j.error.message)||'';}catch(e){}
+ const c=res.status;
+ if(c===401)return 'API key DeepSeek tidak valid (401). Periksa lagi kuncinya lewat tombol AI KEY.';
+ if(c===402)return 'Saldo DeepSeek tidak cukup (402). Isi saldo di platform.deepseek.com.';
+ if(c===400||c===422)return 'Permintaan ditolak DeepSeek ('+c+'): '+m.slice(0,200);
+ if(c===429)return 'Terlalu banyak permintaan ke DeepSeek (429). Coba lagi sebentar.';
+ if(c===503||c===500)return 'Server DeepSeek sedang sibuk ('+c+').';
+ return 'DeepSeek error '+c+(m?': '+m.slice(0,200):'');
+}
+async function dsStream1(a,prompt,task,signal,onText){
+ const h=hist[a.id]=hist[a.id]||[];
+ const msgs=[{role:'system',content:sysPrompt(a,task,prompt)}].concat(h.map(x=>({role:x.role==='model'?'assistant':'user',content:(x.parts&&x.parts[0]&&x.parts[0].text)||''})),[{role:'user',content:prompt}]);
+ const reasoner=/reasoner/i.test(DS.model);
+ const body={model:DS.model,messages:msgs,stream:true,max_tokens:8192};
+ if(!reasoner)body.temperature=task?.7:1.1;
+ let res;
+ try{res=await fetch(DSAPI+'chat/completions',{method:'POST',signal,headers:{'Content-Type':'application/json',Authorization:'Bearer '+DS.key},body:JSON.stringify(body)});}
+ catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error('Tidak bisa menghubungi DeepSeek. Periksa koneksi internet, VPN, atau ekstensi pemblokir.');er.net=1;throw er;}
+ if(!res.ok){const er=new Error(await dsErr(res));er.code=res.status;throw er;}
+ const rd=res.body.getReader(),dec=new TextDecoder();
+ let buf='',full='',finish='',broke=false;
+ const feed=line=>{
+  line=line.trim();if(!line.startsWith('data:'))return;
+  const d=line.slice(5).trim();if(!d||d==='[DONE]')return;
+  let j;try{j=JSON.parse(d);}catch(e){return;}
+  const c=j.choices&&j.choices[0];if(!c)return;
+  if(c.delta&&c.delta.content){full+=c.delta.content;onText(full);}
+  if(c.finish_reason)finish=c.finish_reason;
+ };
+ try{
+  for(;;){
+   const {done,value}=await rd.read();if(done)break;
+   buf+=dec.decode(value,{stream:true});
+   let i;while((i=buf.indexOf('\n'))>=0){feed(buf.slice(0,i));buf=buf.slice(i+1);}
+  }
+  if(buf.trim())feed(buf);
+ }catch(e){if(e&&e.name==='AbortError')throw e;broke=true;}
+ if(broke&&(!finish||!full)){const er=new Error('Koneksi ke DeepSeek terputus.');er.net=1;throw er;}
+ if(!full){const er=new Error('DeepSeek tidak mengembalikan jawaban'+(finish?' ('+finish+')':'')+'.');er.code=-1;throw er;}
+ return {text:full,finish:finish==='length'?'MAX_TOKENS':finish};
+}
+async function dsStream(a,prompt,task,signal,onText,onStatus){
+ const note=m=>{try{onStatus&&onStatus(m);}catch(e){}};
+ const DELAYS=[2,4,8,15,20,30,45,60];
+ let lastErr=null;
+ for(let round=0;round<=DELAYS.length;round++){
+  try{
+   if(round>0)note('Menghubungi DeepSeek… percobaan '+(round+1));
+   return await dsStream1(a,prompt,task,signal,onText);
+  }catch(e){
+   if(e&&e.name==='AbortError')throw e;
+   lastErr=e;const c=e.code;
+   if(c===401||c===402||c===400||c===422)throw e;
+   if(round>=DELAYS.length)break;
+   let w=DELAYS[round];
+   while(w>0){note((c===429?'Limit DeepSeek penuh':'DeepSeek sibuk atau koneksi terganggu')+'. Mencoba lagi dalam '+w+' detik… (percobaan '+(round+2)+')');await sleep(1000,signal);w--;}
+  }
+ }
+ throw lastErr||new Error('Gagal menghubungi DeepSeek.');
+}
+async function dsModels(){
+ let res;
+ try{res=await fetch(DSAPI+'models',{headers:{Authorization:'Bearer '+DS.key}});}catch(e){throw new Error('Tidak bisa menghubungi DeepSeek. Periksa koneksi internet, VPN, atau ekstensi pemblokir.');}
+ if(!res.ok)throw new Error(await dsErr(res));
+ const j=await res.json();return (j.data||[]).map(m=>m.id).sort();
 }
 async function gModels(){
  const out=[];let tok='';
@@ -3807,7 +3893,7 @@ function openRes(rec,tab){
  $('#rtabs').hidden=!hasH;$('#rhtml').hidden=!hasH;
  showTab(hasH&&tab==='prev'?'prev':'text');
  const rv=$('#rrev');rv.replaceChildren();
- if(GM.key){const hd=document.createElement('p');hd.className='note';hd.textContent='Revisi hasil ini: tulis instruksi, agen memperbaruinya sebagai versi baru.';rv.append(hd,reviseBox(rec,v=>{$('#gres').hidden=true;reviseRun(rec,v);}));}
+ if(HAS()){const hd=document.createElement('p');hd.className='note';hd.textContent='Revisi hasil ini: tulis instruksi, agen memperbaruinya sebagai versi baru.';rv.append(hd,reviseBox(rec,v=>{$('#gres').hidden=true;reviseRun(rec,v);}));}
  $('#gres').hidden=false;
 }
 $('#tabt').addEventListener('click',()=>showTab('text'));
@@ -3836,9 +3922,9 @@ $('#rbtn').addEventListener('click',openList);
 $('#lclear').addEventListener('click',()=>{results=[];rSave();gCount();openList();});
 
 function gUI(){
- $('#gdot').classList.toggle('on',!!GM.key);
+ $('#gdot').classList.toggle('on',HAS());
  schedCache={};refreshTasks(Date.now());
- $('#gline').textContent=GM.key?('Gemini aktif · '+GM.model+' · agen standby, bekerja saat diberi perintah'):'Belum terhubung · jawaban masih simulasi';
+ $('#gline').textContent=HAS()?(provName()+' aktif · '+(useDS()?DS.model:GM.model)+' · agen standby, bekerja saat diberi perintah'):'Belum terhubung · jawaban masih simulasi';
 }
 function stat(t,c){const e=$('#gstat');e.textContent=t;e.className='stat'+(c?' '+c:'');}
 function setModels(list){
@@ -3847,26 +3933,40 @@ function setModels(list){
 }
 setModels(['gemini-2.5-flash','gemini-2.5-pro','gemini-flash-lite-latest']);
 function openSet(){
+ $('#gprov').value=GM.provider;
  $('#gkey').value=GM.key;$('#gkey').type='password';$('#gshow').textContent='Lihat';
- $('#gmodel').value=GM.model;stat(GM.key?'Kunci tersimpan di browser ini.':'','');
- $('#gset').hidden=false;setTimeout(()=>$('#gkey').focus(),30);
+ $('#gmodel').value=GM.model;
+ $('#dskey').value=DS.key;$('#dskey').type='password';$('#dsshow').textContent='Lihat';
+ $('#dsmodel').value=DS.model;
+ stat(HAS()?'Kunci tersimpan di browser ini. Aktif: '+provName()+'.':'','');
+ $('#gset').hidden=false;setTimeout(()=>$('#gprov').focus(),30);
 }
 $('#gbtn').addEventListener('click',openSet);
 $('#gshow').addEventListener('click',()=>{const k=$('#gkey'),sh=k.type==='password';k.type=sh?'text':'password';$('#gshow').textContent=sh?'Sembunyi':'Lihat';});
+$('#dsshow').addEventListener('click',()=>{const k=$('#dskey'),sh=k.type==='password';k.type=sh?'text':'password';$('#dsshow').textContent=sh?'Sembunyi':'Lihat';});
 $('#gsave').addEventListener('click',async()=>{
- const k=$('#gkey').value.replace(/[^\x21-\x7E]/g,''),md=$('#gmodel').value.trim()||'gemini-flash-latest';
- if(!k){stat('Masukkan API key dulu.','err');return;}
- GM.key=k;GM.model=md;gSave();gUI();stat('Menguji koneksi…','');
- try{
-  const ms=await gModels();setModels(ms);
-  if(ms.includes(md)||/-latest$/.test(md))stat('Terhubung. Model "'+md+'" siap dipakai. Tutup jendela ini lalu kirim perintah.','ok');
-  else stat('Terhubung, tetapi model "'+md+'" tidak ada di akun Anda. Pilih salah satu dari '+ms.length+' model di kolom Model.','warn');
- }catch(e){
-  stat(e.message,'err');
-  if(/API key tidak valid/.test(e.message)){GM.key='';gSave();gUI();}
+ const gk=$('#gkey').value.replace(/[^\x21-\x7E]/g,''),gm=$('#gmodel').value.trim()||'gemini-flash-latest';
+ const dk=$('#dskey').value.replace(/[^\x21-\x7E]/g,''),dm=$('#dsmodel').value.trim()||'deepseek-chat';
+ let prov=$('#gprov').value;
+ if(!gk&&!dk){stat('Masukkan minimal satu API key (Gemini atau DeepSeek).','err');return;}
+ if(prov==='deepseek'&&!dk){stat('Penyedia DeepSeek dipilih tapi API key DeepSeek kosong.','err');return;}
+ if(prov==='gemini'&&!gk){prov='deepseek';}
+ GM.key=gk;GM.model=gm;DS.key=dk;DS.model=dm;GM.provider=prov;gSave();gUI();stat('Menguji koneksi…','');
+ const msgs=[];let bad=false;
+ if(dk){
+  try{const ms=await dsModels();msgs.push('DeepSeek terhubung ('+ms.length+' model).');}
+  catch(e){msgs.push(e.message);bad=true;if(/tidak valid/.test(e.message)){DS.key='';gSave();gUI();}}
  }
+ if(gk){
+  try{
+   const ms=await gModels();setModels(ms);
+   if(ms.includes(gm)||/-latest$/.test(gm))msgs.push('Gemini terhubung, model "'+gm+'" siap.');
+   else{msgs.push('Gemini terhubung, tapi model "'+gm+'" tidak ada di akun Anda ('+ms.length+' model tersedia).');}
+  }catch(e){msgs.push(e.message);bad=true;if(/API key tidak valid/.test(e.message)){GM.key='';gSave();gUI();}}
+ }
+ stat(msgs.join(' ')+(HAS()?' Aktif: '+provName()+'. Tutup jendela ini lalu kirim perintah.':''),bad?(HAS()?'warn':'err'):'ok');
 });
-$('#gclear').addEventListener('click',()=>{GM.key='';gSave();gUI();$('#gkey').value='';hist={};stat('Kunci dihapus dari browser ini.','');});
+$('#gclear').addEventListener('click',()=>{GM.key='';DS.key='';GM.provider='gemini';gSave();gUI();$('#gkey').value='';$('#dskey').value='';hist={};stat('Semua kunci dihapus dari browser ini.','');});
 
 /* kolom pesan */
 {
@@ -3902,14 +4002,14 @@ function answer(a,txt){
   return pick(['Dicatat, CEO.','Saya kerjakan setelah tugas yang sekarang.','Oke. Mau dijadikan tugas? Ketik /tugas lalu judulnya.','Siap, saya perhatikan.']);
 }
 function respond(txt,forced){
-  if(!ai){if(GM.key)addMsg(byId('boss'),'AI sedang OFF, jadi agen tidak membalas. Nyalakan saklar AI di bagian atas chat.','hint');return;}
+  if(!ai){if(HAS())addMsg(byId('boss'),'AI sedang OFF, jadi agen tidak membalas. Nyalakan saklar AI di bagian atas chat.','hint');return;}
   const gm=txt.match(/^\/gambar\b\s*(.*)/i),wantImg=!!gm||isImgReq(txt);
   if(gm&&!gm[1].trim()){addMsg(byId('boss'),'Contoh: /gambar kucing astronot di bulan, gaya pixel art','hint');return;}
-  if(wantImg&&!GM.key){addMsg(byId('boss'),'Membuat gambar atau foto butuh Gemini. Klik tombol GEMINI di bawah chat lalu masukkan API key.','hint');return;}
+  if(wantImg&&!GM.key){addMsg(byId('boss'),'Membuat gambar atau foto butuh Gemini (DeepSeek hanya untuk teks). Klik tombol AI KEY di bawah chat lalu masukkan API key Gemini.','hint');return;}
   if(GM.key&&wantImg&&isCarouselReq(txt)){carouselRun(forced||byId('nova'),txt,null);return;}
-  if(GM.key){gemRun(forced||(wantImg?byId('nova'):pickAgent(txt)),gm?gm[1].trim():txt,false,null,wantImg?'img':undefined);return;}
-  if(!GM.key&&skills.some(k=>k.on)&&!window.__skHint){window.__skHint=1;addMsg(byId('boss'),'Skill yang Anda unggah baru berpengaruh setelah Gemini terhubung. Sekarang balasan agen masih simulasi.','hint');}
-  if(!hintedKey){hintedKey=true;addMsg(byId('boss'),'Balasan ini masih simulasi. Klik tombol GEMINI di bawah chat lalu masukkan API key dari Google AI Studio agar agen menjawab sungguhan.','hint');}
+  if(HAS()){gemRun(forced||(wantImg?byId('nova'):pickAgent(txt)),gm?gm[1].trim():txt,false,null,wantImg?'img':undefined);return;}
+  if(!HAS()&&skills.some(k=>k.on)&&!window.__skHint){window.__skHint=1;addMsg(byId('boss'),'Skill yang Anda unggah baru berpengaruh setelah Gemini atau DeepSeek terhubung. Sekarang balasan agen masih simulasi.','hint');}
+  if(!hintedKey){hintedKey=true;addMsg(byId('boss'),'Balasan ini masih simulasi. Klik tombol AI KEY di bawah chat lalu masukkan API key Gemini atau DeepSeek agar agen menjawab sungguhan.','hint');}
   const m=AIS.find(a=>new RegExp('@'+a.name,'i').test(txt));
   const who=forced||m||pick(AIS);
   who.bubble={text:'…',ttl:1.4};
@@ -4129,7 +4229,7 @@ $('#online').textContent=String(AG.length);
   {const seen=new Set();eventsBetween(now-12*60000,now).forEach(e=>{if(!e.sys){if(seen.has(e.text))return;seen.add(e.text);recent.push(e.text);}items.push({t:e.t,a:e.who,text:e.text,sys:e.sys?'sys':''});});}
   log.filter(e=>now-e.t<45*60000&&byId(e.id)).forEach(e=>items.push({t:e.t,a:byId(e.id),text:e.text,sys:e.sys}));
   items.sort((p,q)=>p.t-q.t).forEach(i=>addMsg(i.a,i.text,i.sys,i.t,false));
-  addMsg(boss,'Ketik /help untuk melihat perintah. Klik GEMINI di bawah chat untuk menghubungkan agen ke Google AI Studio.','hint',now);
+  addMsg(boss,'Ketik /help untuk melihat perintah. Klik AI KEY di bawah chat untuk menghubungkan agen ke Gemini atau DeepSeek.','hint',now);
   refreshTasks(now);
 })();
 requestAnimationFrame(frame);
