@@ -256,7 +256,7 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
    <div id="esec">
     <p class="note">Eden AI (khusus gambar): buat key di <a href="https://app.edenai.run" target="_blank" rel="noopener noreferrer">app.edenai.run</a>. Memakai kredit akun Eden AI. Perlu key teks (Gemini atau DeepSeek) juga untuk carousel dan teks.</p>
     <label class="fld"><span>API key Eden AI</span><div class="row"><input id="edkey" type="password" autocomplete="off" spellcheck="false" placeholder="eyJ..."><button class="mini" id="edshow" type="button">Lihat</button></div></label>
-    <label class="fld"><span>Model gambar Eden AI (provider/model)</span><input id="edmodel" list="edmodels" autocomplete="off" spellcheck="false" placeholder="openai/gpt-image-1-mini"></label>
+    <label class="fld"><span>Model gambar Eden AI (provider/model)</span><input id="edmodel" list="edmodels" autocomplete="off" spellcheck="false" placeholder="openai/gpt-image-1"></label>
     <datalist id="edmodels"><option value="openai/gpt-image-1-mini"><option value="openai/gpt-image-1"><option value="vertex/gemini-2.5-flash-image"><option value="stabilityai/sd3.5-large"><option value="amazon/amazon.nova-canvas-v1:0"></datalist>
     <label class="fld"><span>Pembuat gambar</span><select id="eduse" style="width:100%;background:#0f1116;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:9px 11px;font:inherit;font-size:16px"><option value="auto">Otomatis (Gemini bila ada, kalau tidak Eden AI)</option><option value="eden">Selalu Eden AI</option></select></label>
    </div>
@@ -2917,7 +2917,7 @@ function tryAdhanPending(){
 const GSK='agentOffice.gemini.v1',RSK='agentOffice.results.v1',GAPI='https://generativelanguage.googleapis.com/v1beta/';
 const GM={key:'',model:'gemini-flash-latest',provider:'gemini'};
 const DS={key:'',model:'deepseek-chat'};
-const EDEN={key:'',model:'openai/gpt-image-1-mini',use:'auto'};
+const EDEN={key:'',model:'openai/gpt-image-1',use:'auto'};
 const IMGOK=()=>!!(GM.key||EDEN.key);
 const useEden=()=>!!EDEN.key&&(EDEN.use==='eden'||!GM.key);
 const HAS=()=>!!(GM.key||DS.key);
@@ -3103,23 +3103,39 @@ async function toInline(u){
 }
 
 /* ---------- Eden AI (gambar, endpoint kompatibel OpenAI) ---------- */
+const ED_FALL=['openai/gpt-image-1','vertex/gemini-2.5-flash-image','stabilityai/sd3.5-large','amazon/amazon.nova-canvas-v1:0','openai/gpt-image-1-mini'];
 async function edenImage(a,prompt,signal,refs,opts){
   const r=opts.ratio||'',size=r==='16:9'?'1536x1024':(r==='9:16'||r==='4:5')?'1024x1536':'1024x1024';
-  const body={model:EDEN.model,prompt:skPrompt(a,prompt,true)+prompt,n:1,response_format:'b64_json'};
-  if(!opts.noSize)body.size=size;
-  let res;
-  try{res=await fetch('https://api.edenai.run/v3/images/generations',{method:'POST',signal,headers:{'Content-Type':'application/json',Authorization:'Bearer '+EDEN.key},body:JSON.stringify(body)});}
-  catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error('Tidak bisa menghubungi Eden AI. Periksa koneksi internet, VPN, atau ekstensi pemblokir. (Jika terus terjadi, kemungkinan Eden AI tidak mengizinkan panggilan langsung dari browser.)');er.net=1;throw er;}
-  if(!res.ok){
-    let m='';try{const j=await res.json();m=(j.error&&(j.error.message||j.error))||j.detail||j.message||'';if(typeof m!=='string')m=JSON.stringify(m);}catch(e){}
-    if(res.status===400&&!opts.noSize)return edenImage(a,prompt,signal,refs,Object.assign({},opts,{noSize:1}));
-    const c=res.status,er=new Error(c===401?'API key Eden AI tidak valid (401).':c===402?'Kredit Eden AI habis (402). Isi kredit di dashboard Eden AI.':c===429?'Limit Eden AI penuh (429). Coba lagi sebentar.':'Eden AI error '+c+(m?': '+m.slice(0,200):''));
-    er.code=c;throw er;
+  const models=[...new Set([EDEN.model].concat(ED_FALL))];
+  let lastErr=null;
+  for(const model of models){
+    for(let noSize=0;noSize<2;noSize++){
+      const body={model,prompt:skPrompt(a,prompt,true)+prompt,n:1,response_format:'b64_json'};
+      if(!noSize)body.size=size;
+      let res;
+      try{res=await fetch('https://api.edenai.run/v3/images/generations',{method:'POST',signal,headers:{'Content-Type':'application/json',Authorization:'Bearer '+EDEN.key},body:JSON.stringify(body)});}
+      catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error('Tidak bisa menghubungi Eden AI. Periksa koneksi internet, VPN, atau ekstensi pemblokir.');er.net=1;throw er;}
+      if(!res.ok){
+        let m='';try{const j=await res.json();m=(j.error&&(j.error.message||j.error))||j.detail||j.message||'';if(typeof m!=='string')m=JSON.stringify(m);}catch(e){}
+        const c=res.status,modelBad=c===404||/not found|inactive|unknown model|invalid model/i.test(m);
+        const er=new Error(c===401?'API key Eden AI tidak valid (401).':c===402?'Kredit Eden AI habis (402). Isi kredit di dashboard Eden AI.':c===429?'Limit Eden AI penuh (429). Coba lagi sebentar.':'Eden AI error '+c+(m?': '+m.slice(0,200):''));
+        er.code=c;lastErr=er;
+        if(c===401||c===402||c===429)throw er;
+        if(modelBad)break;               // model tidak aktif: coba model berikutnya
+        if(c===400&&!noSize)continue;    // mungkin ukuran tidak didukung: coba tanpa size
+        break;
+      }
+      const j=await res.json(),imgs=[];
+      (j.data||[]).forEach(d=>{if(d.b64_json)imgs.push('data:image/'+(j.output_format||'png')+';base64,'+d.b64_json);else if(d.url)imgs.push(d.url);});
+      if(!imgs.length){lastErr=new Error('Eden AI tidak mengembalikan gambar dari model '+model+'.');break;}
+      if(model!==EDEN.model){EDEN.model=model;gSave();}
+      return {text:'',imgs,finish:'',model};
+    }
   }
-  const j=await res.json(),imgs=[];
-  (j.data||[]).forEach(d=>{if(d.b64_json)imgs.push('data:image/'+(j.output_format||'png')+';base64,'+d.b64_json);else if(d.url)imgs.push(d.url);});
-  if(!imgs.length)throw new Error('Eden AI tidak mengembalikan gambar. Coba ganti model atau ubah deskripsinya.');
-  return {text:'',imgs,finish:'',model:EDEN.model};
+  const er=lastErr||new Error('Eden AI gagal membuat gambar.');
+  er.message+=' (Sudah dicoba beberapa model: '+models.join(', ')+'. Cek model yang aktif di dashboard Eden AI lalu isi di kolom Model Eden AI.)';
+  er.code=er.code===400||er.code===404?-3:er.code;  // tetap jatuh ke grafis vektor lewat isQuotaErr bila perlu
+  throw er;
 }
 async function gImage(a,prompt,signal,refs,opts){
   if(useEden())return edenImage(a,prompt,signal,refs,opts||{});
@@ -3743,7 +3759,7 @@ async function teamRun(lead,full,ut,alt){
 
 
 /* ---------- cadangan: bila model gambar tidak bisa dipakai (kuota habis, akun gratis), slide dibuat sebagai grafis SVG oleh model teks lalu diubah jadi PNG ---------- */
-const isQuotaErr=e=>!!e&&(e.code===429||e.code===403||e.code===402||e.noModel);
+const isQuotaErr=e=>!!e&&(e.code===429||e.code===403||e.code===402||e.code===-3||e.noModel);
 function dimsOf(ratio){return ratio==='4:5'?[1080,1350]:ratio==='9:16'?[1080,1920]:ratio==='16:9'?[1600,900]:[1080,1080];}
 function svgToPng(svg,W,H){
   return new Promise((res,rej)=>{
@@ -3982,7 +3998,7 @@ $('#gsave').addEventListener('click',async()=>{
  const gk=$('#gkey').value.replace(/[^\x21-\x7E]/g,''),gm=$('#gmodel').value.trim()||'gemini-flash-latest';
  const dk=$('#dskey').value.replace(/[^\x21-\x7E]/g,''),dm=$('#dsmodel').value.trim()||'deepseek-chat';
  let prov=$('#gprov').value;
- const ek=$('#edkey').value.replace(/[^\x21-\x7E]/g,''),em=$('#edmodel').value.trim()||'openai/gpt-image-1-mini';
+ const ek=$('#edkey').value.replace(/[^\x21-\x7E]/g,''),em=$('#edmodel').value.trim()||'openai/gpt-image-1';
  if(!gk&&!dk){stat('Masukkan minimal satu API key teks (Gemini atau DeepSeek). Eden AI hanya untuk gambar.','err');return;}
  if(prov==='deepseek'&&!dk){stat('Penyedia DeepSeek dipilih tapi API key DeepSeek kosong.','err');return;}
  if(prov==='gemini'&&!gk){prov='deepseek';}
