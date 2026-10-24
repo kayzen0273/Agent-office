@@ -237,7 +237,7 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
    <span class="live" aria-hidden="true"></span>
    <span class="brand">Agent Office</span>
    <button class="chip" id="adzanbtn" type="button" title="Pilih file audio adzan dari perangkat">ADZAN</button><input type="file" id="adzanfile" accept="audio/*" hidden><button class="chip" id="sholat" type="button" title="Demo waktu sholat">SHOLAT</button>
-   <button class="chip" id="mode" type="button" aria-label="Mode waktu">AUTO</button>
+   <button class="chip" id="wxbtn" type="button" title="Cuaca kantor">CUACA</button><button class="chip" id="ttsbtn" type="button" title="Suara agen">SUARA OFF</button><button class="chip" id="mode" type="button" aria-label="Mode waktu">AUTO</button>
    <span class="chip"><i id="pdot"></i><span id="plabel">DAWN</span></span>
   </header>
   <main class="main">
@@ -2300,6 +2300,7 @@ function render(t){
   ctx.clearRect(0,0,CW,CH);
   ctx.imageSmoothingEnabled=false;
   drawRoom(t);
+  try{drawFX(t);}catch(e){}
 }
 function drawLabels(){
   /* papan nama menempel pada bidang dinding/kaca (isometrik), bukan teks melayang */
@@ -2536,6 +2537,56 @@ function update(dt){
   });
   banter(dt);
 }
+
+/* ---------- tambahan: cuaca, level/XP, suara agen, indikator kerja ---------- */
+const XPK='agentOffice.xp';let XP={};try{XP=JSON.parse(localStorage.getItem(XPK)||'{}');}catch(e){XP={};}
+const lvOf=a=>Math.floor(Math.sqrt((XP[a.id]||0)/20))+1;
+function xpGain(a,n){if(a.human)return;const l0=lvOf(a);XP[a.id]=(XP[a.id]||0)+n;try{localStorage.setItem(XPK,JSON.stringify(XP));}catch(e){}
+  a.bubble={text:'+'+n+' XP',ttl:2.2};
+  if(lvOf(a)>l0){addMsg(a,'Naik ke level '+lvOf(a)+'! 🎉','hint',Date.now(),true);a._lvup=1.6;}}
+let WX='clear',WXM='auto',wxAt=0;
+async function wxLoad(){if(Date.now()-wxAt<9e5)return;wxAt=Date.now();
+  try{const r=await fetch('https://api.open-meteo.com/v1/forecast?latitude=-6.9175&longitude=107.6191&current=weather_code');const c=(await r.json()).current.weather_code;
+    WX=c>=95?'storm':(c>=51&&c<=67)||(c>=80&&c<=82)?'rain':c===45||c===48?'fog':'clear';}catch(e){}}
+wxLoad();setInterval(wxLoad,9e5);
+const WXL={clear:'CERAH',rain:'HUJAN',storm:'PETIR',fog:'KABUT'};
+const wxb=$('#wxbtn');
+function wxCur(){return WXM==='auto'?WX:WXM;}
+function wxLbl(){wxb.textContent='CUACA '+(WXM==='auto'?'AUTO':WXL[WXM]);}wxLbl();
+wxb.onclick=()=>{const o=['auto','clear','rain','storm','fog'];WXM=o[(o.indexOf(WXM)+1)%o.length];wxLbl();};
+const drops=Array.from({length:140},()=>({x:rnd(),y:rnd(),v:.6+rnd()*.7}));let flash=0,nextF=3;
+function drawFX(t){
+  const w=wxCur(),dt=.016;
+  if(w==='rain'||w==='storm'){
+    ctx.save();ctx.strokeStyle='rgba(170,200,255,.45)';ctx.lineWidth=1;ctx.beginPath();
+    drops.forEach(d=>{d.y+=d.v*dt*1.6;d.x-=d.v*dt*.25;if(d.y>1){d.y=0;d.x=rnd()*1.2;}if(d.x<0)d.x+=1.1;
+      const x=d.x*CW,y=d.y*CH;ctx.moveTo(x,y);ctx.lineTo(x-3,y+11);});
+    ctx.stroke();ctx.fillStyle='rgba(20,30,60,.16)';ctx.fillRect(0,0,CW,CH);ctx.restore();
+  }
+  if(w==='storm'){nextF-=dt;if(nextF<=0){flash=1;nextF=4+rnd()*8;}
+    if(flash>0){ctx.fillStyle='rgba(235,240,255,'+(flash*.55)+')';ctx.fillRect(0,0,CW,CH);flash-=dt*3;}}
+  if(w==='fog'){const g=ctx.createLinearGradient(0,0,0,CH);g.addColorStop(0,'rgba(200,210,225,.28)');g.addColorStop(1,'rgba(200,210,225,.1)');
+    ctx.fillStyle=g;ctx.fillRect(0,0,CW,CH);}
+  /* indikator kerja + level di atas kepala agen */
+  AG.forEach(a=>{if(a._sx===undefined)return;const x=a._sx,y=a._sy-14*S;ctx.save();
+    if(!a.human){ctx.font=Math.max(7,7*S)+'px Silkscreen, monospace';ctx.textAlign='center';ctx.fillStyle=a.color;
+      ctx.fillText('LV'+lvOf(a),x,y-(a._lvup>0?6*S:0));}
+    if(a.busy>0){ctx.strokeStyle=a.color;ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y-12*S,4*S,t*6,t*6+4.2);ctx.stroke();}
+    if(a._lvup>0){a._lvup-=.016;ctx.fillStyle='#ffe27a';ctx.fillText('★ LEVEL UP',x,y-22*S);}
+    ctx.restore();});
+}
+/* suara agen (Web Speech API), nada dan kecepatan beda per agen */
+let TTS=false;try{TTS=localStorage.getItem('agentOffice.tts')==='1';}catch(e){}
+const tb=$('#ttsbtn');const VP={claude:[.85,1],nova:[1.4,1.05],bolt:[1.7,1.15],naruto:[1.2,1.2],yukina:[1.6,1],bananacat:[1.9,1.1],boss:[.7,.95]};
+function ttsLbl(){tb.textContent=TTS?'SUARA ON':'SUARA OFF';}ttsLbl();
+tb.onclick=()=>{TTS=!TTS;touched=true;try{localStorage.setItem('agentOffice.tts',TTS?'1':'0');}catch(e){}
+  if(!TTS&&window.speechSynthesis)speechSynthesis.cancel();ttsLbl();};
+function speak(a,text){if(!TTS||muted||vol<=0||!window.speechSynthesis||a.human)return;
+  const clean=String(text).replace(/```[\s\S]*?```/g,' ').replace(/[*#`_>\[\]()|~-]+/g,' ').replace(/https?:\S+/g,' ').replace(/\s+/g,' ').trim().slice(0,260);
+  if(!clean)return;const u=new SpeechSynthesisUtterance(clean),p=VP[a.id]||[1,1];
+  u.lang='id-ID';u.pitch=p[0];u.rate=p[1];u.volume=Math.min(1,vol*2);
+  const v=speechSynthesis.getVoices().find(v=>/^id/i.test(v.lang));if(v)u.voice=v;
+  speechSynthesis.speak(u);}
 
 /* ---------- chat ---------- */
 const msgs=$('#msgs');
@@ -3647,6 +3698,7 @@ async function gemStep(a,prompt,tag,ac){
     r.tx.className='tx ai';r.tx.replaceChildren(mdRender(text));
     log.push({t:Date.now(),id:a.id,text:text.replace(/\s+/g,' ').slice(0,220),sys:''});save();
     msgs.scrollTop=msgs.scrollHeight;
+    try{xpGain(a,10);speak(a,text);}catch(e){}
     return text;
   }catch(e){
     if(raf)cancelAnimationFrame(raf);
@@ -4028,7 +4080,7 @@ function syncPhase(){const p=curPhase();if(p.label!==lastLabel){lastLabel=p.labe
 const roster=$('#roster');
 AG.forEach(a=>{const c=document.createElement('span');c.className='rc';c.id='rc-'+a.id;c.innerHTML='<i></i><b></b><em></em>';c.querySelector('i').style.background=a.color;c.querySelector('b').textContent=a.name;roster.append(c);});
 function actText(a){return a.state==='walk'&&!a.pr?'Berjalan ke '+({cooler:'pantry',printer:'printer',board:'papan tugas',door:'ruang rapat',meet:'ruang rapat',out:'meja'}[a.dest]||destLabel(a.dest)||'meja'):a.act;}
-function syncRoster(){AG.forEach(a=>{$('#rc-'+a.id+' em').textContent=actText(a);});}
+function syncRoster(){AG.forEach(a=>{$('#rc-'+a.id+' em').textContent=(a.human?'':'Lv'+lvOf(a)+' · ')+actText(a);});}
 const tip=$('#tip');let tipFor=null;function syncRooms(){
   const n=AG.filter(a=>a.loc==='meet').length,now=Date.now()/1000;let txt='';
   if(n)txt=n+' ORANG';
