@@ -240,7 +240,7 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
   <div class="dh"><h2 id="gsett">Hubungkan AI</h2><button class="mini" type="button" data-x>Tutup</button></div>
   <div class="db">
    <p class="note">Kunci hanya disimpan di browser ini dan dikirim langsung ke penyedianya, tidak lewat server lain.</p>
-   <label class="fld"><span>Penyedia untuk teks &amp; tugas</span><select id="gprov" style="width:100%;background:#0f1116;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:9px 11px;font:inherit;font-size:16px"><option value="gemini">Gemini (Google AI Studio)</option><option value="deepseek">DeepSeek</option></select></label>
+   <label class="fld"><span>Penyedia untuk teks &amp; tugas</span><select id="gprov" style="width:100%;background:#0f1116;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:9px 11px;font:inherit;font-size:16px"><option value="gemini">Gemini (Google AI Studio)</option><option value="deepseek">DeepSeek</option><option value="claude">Claude (Anthropic)</option></select></label>
    <div id="gsec">
     <p class="note">Gemini: buat API key gratis di <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>. Wajib untuk fitur gambar dan carousel.</p>
     <label class="fld"><span>API key Gemini</span><div class="row"><input id="gkey" type="password" autocomplete="off" spellcheck="false" placeholder="AIza..."><button class="mini" id="gshow" type="button">Lihat</button></div></label>
@@ -252,6 +252,12 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
     <label class="fld"><span>API key DeepSeek</span><div class="row"><input id="dskey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-..."><button class="mini" id="dsshow" type="button">Lihat</button></div></label>
     <label class="fld"><span>Model DeepSeek</span><input id="dsmodel" list="dsmodels" autocomplete="off" spellcheck="false" placeholder="deepseek-chat"></label>
     <datalist id="dsmodels"><option value="deepseek-chat"><option value="deepseek-reasoner"></datalist>
+   </div>
+   <div id="csec">
+    <p class="note">Claude: buat API key di <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">console.anthropic.com</a> (butuh kredit; langganan Claude.ai tidak berlaku untuk API). Hanya untuk teks, kode, dan HTML.</p>
+    <label class="fld"><span>API key Claude</span><div class="row"><input id="clkey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-..."><button class="mini" id="clshow" type="button">Lihat</button></div></label>
+    <label class="fld"><span>Model Claude</span><input id="clmodel" list="clmodels" autocomplete="off" spellcheck="false" placeholder="claude-sonnet-5-5"></label>
+    <datalist id="clmodels"><option value="claude-sonnet-5-5"><option value="claude-haiku-5-5"><option value="claude-opus-5-5"><option value="claude-fable-5-1"></datalist>
    </div>
    <div id="esec">
     <p class="note">Eden AI (khusus gambar): buat key di <a href="https://app.edenai.run" target="_blank" rel="noopener noreferrer">app.edenai.run</a>. Memakai kredit akun Eden AI. Perlu key teks (Gemini atau DeepSeek) juga untuk carousel dan teks.</p>
@@ -2920,11 +2926,15 @@ const DS={key:'',model:'deepseek-chat'};
 const EDEN={key:'',model:'openai/gpt-image-1',use:'auto'};
 const IMGOK=()=>!!(GM.key||EDEN.key);
 const useEden=()=>!!EDEN.key&&(EDEN.use==='eden'||!GM.key);
-const HAS=()=>!!(GM.key||DS.key);
-const useDS=()=>!!DS.key&&(GM.provider==='deepseek'||!GM.key);
-const provName=()=>useDS()?'DeepSeek':'Gemini';
-try{const g=JSON.parse(localStorage.getItem(GSK)||'{}');GM.key=String(g.key||'').replace(/[^\x21-\x7E]/g,'');GM.model=g.model||GM.model;DS.key=String(g.dsKey||'').replace(/[^\x21-\x7E]/g,'');DS.model=g.dsModel||DS.model;GM.provider=g.provider||(g.key?'gemini':(g.dsKey?'deepseek':'gemini'));EDEN.key=String(g.edKey||'').replace(/[^\x21-\x7E]/g,'');EDEN.model=g.edModel||EDEN.model;EDEN.use=g.edUse||'auto';}catch(e){}
-function gSave(){try{localStorage.setItem(GSK,JSON.stringify({key:GM.key,model:GM.model,dsKey:DS.key,dsModel:DS.model,provider:GM.provider,edKey:EDEN.key,edModel:EDEN.model,edUse:EDEN.use}));}catch(e){}}
+const HAS=()=>!!(GM.key||DS.key||CL.key);
+const CL={key:'',model:'claude-sonnet-5-5'};
+const textProv=()=>{const p=GM.provider;if(p==='claude'&&CL.key)return 'claude';if(p==='deepseek'&&DS.key)return 'deepseek';if(p==='gemini'&&GM.key)return 'gemini';return GM.key?'gemini':DS.key?'deepseek':CL.key?'claude':'gemini';};
+const useDS=()=>textProv()==='deepseek';
+const useCL=()=>textProv()==='claude';
+const provName=()=>({gemini:'Gemini',deepseek:'DeepSeek',claude:'Claude'})[textProv()];
+const provModel=()=>({gemini:GM.model,deepseek:DS.model,claude:CL.model})[textProv()];
+try{const g=JSON.parse(localStorage.getItem(GSK)||'{}');GM.key=String(g.key||'').replace(/[^\x21-\x7E]/g,'');GM.model=g.model||GM.model;DS.key=String(g.dsKey||'').replace(/[^\x21-\x7E]/g,'');DS.model=g.dsModel||DS.model;GM.provider=g.provider||(g.key?'gemini':(g.dsKey?'deepseek':'gemini'));EDEN.key=String(g.edKey||'').replace(/[^\x21-\x7E]/g,'');EDEN.model=g.edModel||EDEN.model;EDEN.use=g.edUse||'auto';CL.key=String(g.clKey||'').replace(/[^\x21-\x7E]/g,'');CL.model=g.clModel||CL.model;}catch(e){}
+function gSave(){try{localStorage.setItem(GSK,JSON.stringify({key:GM.key,model:GM.model,dsKey:DS.key,dsModel:DS.model,provider:GM.provider,edKey:EDEN.key,edModel:EDEN.model,edUse:EDEN.use,clKey:CL.key,clModel:CL.model}));}catch(e){}}
 let results=[];try{results=JSON.parse(localStorage.getItem(RSK)||'[]');if(!Array.isArray(results))results=[];}catch(e){results=[];}
 function rSer(list){let used=0;return list.slice().reverse().map(r=>{if(!r.imgs)return r;const n=r.imgs.reduce((q,u)=>q+u.length,0);if(used+n>1500000)return Object.assign({},r,{imgs:undefined,imgLost:true});used+=n;return r;}).reverse();}
 function rSave(){sbSchedule();try{localStorage.setItem(RSK,JSON.stringify(rSer(results.slice(-30))));}catch(e){try{results=results.slice(-8);localStorage.setItem(RSK,JSON.stringify(rSer(results).map(r=>Object.assign({},r,{imgs:undefined}))));}catch(_){}}}
@@ -3572,6 +3582,7 @@ const GFALL=['gemini-flash-latest','gemini-2.5-flash','gemini-flash-lite-latest'
 const sleep=(ms,sig)=>new Promise((ok,no)=>{const t=setTimeout(ok,ms);if(sig)sig.addEventListener('abort',()=>{clearTimeout(t);no(new DOMException('Aborted','AbortError'));},{once:true});});
 async function gStream(a,prompt,task,signal,onText,onStatus){
  if(useDS())return dsStream(a,prompt,task,signal,onText,onStatus);
+ if(useCL())return clStream(a,prompt,task,signal,onText,onStatus);
  const note=m=>{try{onStatus&&onStatus(m);}catch(e){}};
  const DELAYS=[2,4,8,15,20,30,30,45,60,60];   // detik; total sekitar 4 menit sebelum menyerah
  let lastErr=null,clearedHist=false;
@@ -3682,6 +3693,85 @@ async function dsModels(){
  try{res=await fetch(DSAPI+'models',{headers:{Authorization:'Bearer '+DS.key}});}catch(e){throw new Error('Tidak bisa menghubungi DeepSeek. Periksa koneksi internet, VPN, atau ekstensi pemblokir.');}
  if(!res.ok)throw new Error(await dsErr(res));
  const j=await res.json();return (j.data||[]).map(m=>m.id).sort();
+}
+
+/* ---------- Claude (Anthropic API langsung dari browser, hanya teks) ---------- */
+const CLAPI='https://api.anthropic.com/v1/';
+const CL_FALL=['claude-sonnet-5-5','claude-haiku-5-5','claude-opus-5-5'];
+const clHeaders=()=>({'Content-Type':'application/json','x-api-key':CL.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'});
+async function clErr(res){
+ let m='';try{const j=await res.json();m=(j.error&&j.error.message)||'';}catch(e){}
+ const c=res.status;
+ if(c===401)return 'API key Claude tidak valid (401). Periksa lagi kuncinya lewat tombol AI KEY.';
+ if(c===403)return 'Akses ditolak Claude (403). '+m.slice(0,140);
+ if(c===404)return 'Model Claude tidak ditemukan (404). '+m.slice(0,120);
+ if(c===400&&/credit|balance|billing/i.test(m))return 'Saldo Anthropic API tidak cukup. Isi kredit di console.anthropic.com.';
+ if(c===400)return 'Permintaan ditolak Claude (400): '+m.slice(0,200);
+ if(c===429)return 'Limit Claude penuh (429). Coba lagi sebentar.';
+ if(c===529||c===503)return 'Server Claude sedang overload ('+c+').';
+ return 'Claude error '+c+(m?': '+m.slice(0,200):'');
+}
+async function clStream1(a,prompt,task,signal,onText,model){
+ const h=hist[a.id]=hist[a.id]||[];
+ const msgs=h.map(x=>({role:x.role==='model'?'assistant':'user',content:(x.parts&&x.parts[0]&&x.parts[0].text)||'.'})).concat([{role:'user',content:prompt}]);
+ let res;
+ try{res=await fetch(CLAPI+'messages',{method:'POST',signal,headers:clHeaders(),body:JSON.stringify({model,max_tokens:task?16000:8192,system:sysPrompt(a,task,prompt),messages:msgs,stream:true})});}
+ catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error('Tidak bisa menghubungi Claude (api.anthropic.com). Periksa koneksi internet, VPN, atau ekstensi pemblokir.');er.net=1;throw er;}
+ if(!res.ok){const er=new Error(await clErr(res));er.code=res.status;throw er;}
+ const rd=res.body.getReader(),dec=new TextDecoder();
+ let buf='',full='',finish='',broke=false,apiErr='';
+ const feed=line=>{
+  line=line.trim();if(!line.startsWith('data:'))return;
+  let j;try{j=JSON.parse(line.slice(5));}catch(e){return;}
+  if(j.type==='content_block_delta'&&j.delta&&j.delta.type==='text_delta'){full+=j.delta.text;onText(full);}
+  else if(j.type==='message_delta'&&j.delta&&j.delta.stop_reason)finish=j.delta.stop_reason;
+  else if(j.type==='error')apiErr=(j.error&&j.error.message)||'error';
+ };
+ try{
+  for(;;){
+   const {done,value}=await rd.read();if(done)break;
+   buf+=dec.decode(value,{stream:true});
+   let i;while((i=buf.indexOf('\n'))>=0){feed(buf.slice(0,i));buf=buf.slice(i+1);}
+  }
+  if(buf.trim())feed(buf);
+ }catch(e){if(e&&e.name==='AbortError')throw e;broke=true;}
+ if(apiErr&&!full){const er=new Error('Claude: '+apiErr);er.code=529;throw er;}
+ if(broke&&(!finish||!full)){const er=new Error('Koneksi ke Claude terputus.');er.net=1;throw er;}
+ if(!full){const er=new Error('Claude tidak mengembalikan jawaban'+(finish?' ('+finish+')':'')+'.');er.code=-1;throw er;}
+ return {text:full,finish:finish==='max_tokens'?'MAX_TOKENS':finish};
+}
+async function clStream(a,prompt,task,signal,onText,onStatus){
+ const note=m=>{try{onStatus&&onStatus(m);}catch(e){}};
+ const DELAYS=[2,4,8,15,20,30,45,60];
+ let lastErr=null;
+ for(let round=0;round<=DELAYS.length;round++){
+  const models=[...new Set([CL.model,...CL_FALL])];
+  let retryable=false;
+  for(const model of models){
+   try{
+    if(round>0)note('Menghubungi Claude ('+model+')… percobaan '+(round+1));
+    const r=await clStream1(a,prompt,task,signal,onText,model);
+    if(model!==CL.model)r.text='_(Model '+CL.model+' tidak tersedia, otomatis memakai '+model+'.)_\n\n'+r.text;
+    return r;
+   }catch(e){
+    if(e&&e.name==='AbortError')throw e;
+    lastErr=e;const c=e.code;
+    if(c===401||c===403||c===400)throw e;
+    if(c===404)continue;           // model tidak ada: coba model berikutnya
+    retryable=true;break;          // 429/5xx/jaringan: tunggu lalu ulangi
+   }
+  }
+  if(!retryable||round>=DELAYS.length)break;
+  let w=DELAYS[round];
+  while(w>0){note((lastErr&&lastErr.code===429?'Limit Claude penuh':'Claude sibuk atau koneksi terganggu')+'. Mencoba lagi dalam '+w+' detik… (percobaan '+(round+2)+')');await sleep(1000,signal);w--;}
+ }
+ throw lastErr||new Error('Gagal menghubungi Claude.');
+}
+async function clModels(){
+ let res;
+ try{res=await fetch(CLAPI+'models?limit=50',{headers:clHeaders()});}catch(e){throw new Error('Tidak bisa menghubungi Claude. Periksa koneksi internet, VPN, atau ekstensi pemblokir.');}
+ if(!res.ok)throw new Error(await clErr(res));
+ const j=await res.json();return (j.data||[]).map(m=>m.id);
 }
 async function gModels(){
  const out=[];let tok='';
@@ -3972,7 +4062,7 @@ $('#lclear').addEventListener('click',()=>{results=[];rSave();gCount();openList(
 function gUI(){
  $('#gdot').classList.toggle('on',HAS());
  schedCache={};refreshTasks(Date.now());
- $('#gline').textContent=HAS()?(provName()+' aktif · '+(useDS()?DS.model:GM.model)+' · agen standby, bekerja saat diberi perintah'):'Belum terhubung · jawaban masih simulasi';
+ $('#gline').textContent=HAS()?(provName()+' aktif · '+provModel()+' · agen standby, bekerja saat diberi perintah'):'Belum terhubung · jawaban masih simulasi';
 }
 function stat(t,c){const e=$('#gstat');e.textContent=t;e.className='stat'+(c?' '+c:'');}
 function setModels(list){
@@ -3987,11 +4077,13 @@ function openSet(){
  $('#dskey').value=DS.key;$('#dskey').type='password';$('#dsshow').textContent='Lihat';
  $('#dsmodel').value=DS.model;
  $('#edkey').value=EDEN.key;$('#edkey').type='password';$('#edshow').textContent='Lihat';$('#edmodel').value=EDEN.model;$('#eduse').value=EDEN.use;
+ $('#clkey').value=CL.key;$('#clkey').type='password';$('#clshow').textContent='Lihat';$('#clmodel').value=CL.model;
  stat(HAS()?'Kunci tersimpan di browser ini. Aktif: '+provName()+'.':'','');
  $('#gset').hidden=false;setTimeout(()=>$('#gprov').focus(),30);
 }
 $('#gbtn').addEventListener('click',openSet);
 $('#gshow').addEventListener('click',()=>{const k=$('#gkey'),sh=k.type==='password';k.type=sh?'text':'password';$('#gshow').textContent=sh?'Sembunyi':'Lihat';});
+$('#clshow').addEventListener('click',()=>{const k=$('#clkey'),sh=k.type==='password';k.type=sh?'text':'password';$('#clshow').textContent=sh?'Sembunyi':'Lihat';});
 $('#edshow').addEventListener('click',()=>{const k=$('#edkey'),sh=k.type==='password';k.type=sh?'text':'password';$('#edshow').textContent=sh?'Sembunyi':'Lihat';});
 $('#dsshow').addEventListener('click',()=>{const k=$('#dskey'),sh=k.type==='password';k.type=sh?'text':'password';$('#dsshow').textContent=sh?'Sembunyi':'Lihat';});
 $('#gsave').addEventListener('click',async()=>{
@@ -3999,14 +4091,20 @@ $('#gsave').addEventListener('click',async()=>{
  const dk=$('#dskey').value.replace(/[^\x21-\x7E]/g,''),dm=$('#dsmodel').value.trim()||'deepseek-chat';
  let prov=$('#gprov').value;
  const ek=$('#edkey').value.replace(/[^\x21-\x7E]/g,''),em=$('#edmodel').value.trim()||'openai/gpt-image-1';
- if(!gk&&!dk){stat('Masukkan minimal satu API key teks (Gemini atau DeepSeek). Eden AI hanya untuk gambar.','err');return;}
+ const ck=$('#clkey').value.replace(/[^\x21-\x7E]/g,''),cm=$('#clmodel').value.trim()||'claude-sonnet-5-5';
+ if(!gk&&!dk&&!ck){stat('Masukkan minimal satu API key teks (Gemini, DeepSeek, atau Claude). Eden AI hanya untuk gambar.','err');return;}
+ if(prov==='claude'&&!ck){stat('Penyedia Claude dipilih tapi API key Claude kosong.','err');return;}
  if(prov==='deepseek'&&!dk){stat('Penyedia DeepSeek dipilih tapi API key DeepSeek kosong.','err');return;}
- if(prov==='gemini'&&!gk){prov='deepseek';}
- GM.key=gk;GM.model=gm;DS.key=dk;DS.model=dm;GM.provider=prov;EDEN.key=ek;EDEN.model=em;EDEN.use=$('#eduse').value;gSave();gUI();stat('Menguji koneksi…','');
+ if(prov==='gemini'&&!gk){prov=dk?'deepseek':'claude';}
+ GM.key=gk;GM.model=gm;DS.key=dk;DS.model=dm;GM.provider=prov;CL.key=ck;CL.model=cm;EDEN.key=ek;EDEN.model=em;EDEN.use=$('#eduse').value;gSave();gUI();stat('Menguji koneksi…','');
  const msgs=[];let bad=false;
  if(dk){
   try{const ms=await dsModels();msgs.push('DeepSeek terhubung ('+ms.length+' model).');}
   catch(e){msgs.push(e.message);bad=true;if(/tidak valid/.test(e.message)){DS.key='';gSave();gUI();}}
+ }
+ if(ck){
+  try{const ms=await clModels();msgs.push('Claude terhubung ('+ms.length+' model).');if(ms.length&&!ms.includes(cm))msgs.push('Model "'+cm+'" tidak ada di daftar akun; akan dicoba model cadangan.');}
+  catch(e){msgs.push(e.message);bad=true;if(/tidak valid/.test(e.message)){CL.key='';gSave();gUI();}}
  }
  if(gk){
   try{
@@ -4018,7 +4116,7 @@ $('#gsave').addEventListener('click',async()=>{
  if(ek)msgs.push('Eden AI tersimpan (model '+em+'); keabsahan key diuji saat membuat gambar pertama.');
  stat(msgs.join(' ')+(HAS()?' Aktif: '+provName()+'. Tutup jendela ini lalu kirim perintah.':''),bad?(HAS()?'warn':'err'):'ok');
 });
-$('#gclear').addEventListener('click',()=>{GM.key='';DS.key='';EDEN.key='';GM.provider='gemini';gSave();gUI();$('#gkey').value='';$('#dskey').value='';$('#edkey').value='';hist={};stat('Semua kunci dihapus dari browser ini.','');});
+$('#gclear').addEventListener('click',()=>{GM.key='';DS.key='';CL.key='';EDEN.key='';GM.provider='gemini';gSave();gUI();$('#gkey').value='';$('#dskey').value='';$('#clkey').value='';$('#edkey').value='';hist={};stat('Semua kunci dihapus dari browser ini.','');});
 
 /* kolom pesan */
 {
