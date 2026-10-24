@@ -241,7 +241,8 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
   <div class="db">
    <p class="note">Buat API key gratis di <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>, lalu tempel di sini. Kunci hanya disimpan di browser ini dan dikirim langsung ke Google, tidak lewat server lain.</p>
    <label class="fld"><span>API key</span><div class="row"><input id="gkey" type="password" autocomplete="off" spellcheck="false" placeholder="AIza..."><button class="mini" id="gshow" type="button">Lihat</button></div></label>
-   <label class="fld"><span>Model (ketik atau pilih dari daftar)</span><input id="gmodel" list="gmodels" autocomplete="off" spellcheck="false" placeholder="gemini-flash-latest"></label>
+   <label class="fld"><span>Pilih model</span><select id="gmodelsel" style="width:100%;background:#0f1116;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:9px 11px;font:inherit;font-size:16px"></select></label>
+   <label class="fld"><span>Atau ketik nama model sendiri</span><input id="gmodel" list="gmodels" autocomplete="off" spellcheck="false" placeholder="gemini-flash-latest"></label>
    <datalist id="gmodels"></datalist>
    <p class="stat" id="gstat" aria-live="polite"></p>
   </div>
@@ -3843,12 +3844,24 @@ function gUI(){
 function stat(t,c){const e=$('#gstat');e.textContent=t;e.className='stat'+(c?' '+c:'');}
 function setModels(list){
  const dl=$('#gmodels');dl.replaceChildren();
- [...new Set(['gemini-flash-latest','gemini-pro-latest',...list])].forEach(n=>{const o=document.createElement('option');o.value=n;dl.append(o);});
+ const all=[...new Set(['gemini-flash-latest','gemini-pro-latest',...list])];
+ all.forEach(n=>{const o=document.createElement('option');o.value=n;dl.append(o);});
+ fillSel(all);
 }
+const MLBL={'gemini-flash-latest':'gemini-flash-latest (cepat, disarankan)','gemini-pro-latest':'gemini-pro-latest (paling pintar)','gemini-flash-lite-latest':'gemini-flash-lite-latest (paling hemat)'};
+function fillSel(list){
+ const sel=$('#gmodelsel'),cur=$('#gmodel').value.trim()||GM.model;
+ const all=[...new Set([cur,...list])];
+ sel.replaceChildren();
+ all.forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=MLBL[n]||n;sel.append(o);});
+ sel.value=cur;
+}
+$('#gmodelsel').addEventListener('change',e=>{$('#gmodel').value=e.target.value;});
+$('#gmodel').addEventListener('input',()=>{const v=$('#gmodel').value.trim(),sel=$('#gmodelsel');if(v&&![...sel.options].some(o=>o.value===v)){const o=document.createElement('option');o.value=v;o.textContent=v;sel.prepend(o);}if(v)sel.value=v;});
 setModels(['gemini-2.5-flash','gemini-2.5-pro','gemini-flash-lite-latest']);
 function openSet(){
  $('#gkey').value=GM.key;$('#gkey').type='password';$('#gshow').textContent='Lihat';
- $('#gmodel').value=GM.model;stat(GM.key?'Kunci tersimpan di browser ini.':'','');
+ $('#gmodel').value=GM.model;fillSel([...$('#gmodels').options].map(o=>o.value));stat(GM.key?'Kunci tersimpan di browser ini.':'','');
  $('#gset').hidden=false;setTimeout(()=>$('#gkey').focus(),30);
 }
 $('#gbtn').addEventListener('click',openSet);
