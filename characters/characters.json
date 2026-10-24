@@ -1,0 +1,12 @@
+{
+  "format": "Petdex spritesheet 8 kolom x 9 baris, frame 192x208 (1536x1872)",
+  "characters": [
+    { "folder": "prabowo",   "appId": "boss",      "name": "Prabowo",   "role": "Pendiri",              "team": "inti" },
+    { "folder": "einstein",  "appId": "claude",    "name": "Einstein",  "role": "Engineer",             "team": "teknis" },
+    { "folder": "deepseek",  "appId": "nova",      "name": "DeepSeek",  "role": "Desainer",             "team": "teknis" },
+    { "folder": "doraemon",  "appId": "bolt",      "name": "Doraemon",  "role": "QA",                   "team": "teknis" },
+    { "folder": "naruto",    "appId": "naruto",    "name": "Naruto",    "role": "Video Editor",         "team": "konten" },
+    { "folder": "yukina",    "appId": "yukina",    "name": "Yukina",    "role": "Social Media Manager", "team": "konten" },
+    { "folder": "bananacat", "appId": "bananacat", "name": "BananaCat", "role": "Content Creator",      "team": "konten" }
+  ]
+}
