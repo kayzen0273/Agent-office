@@ -2420,27 +2420,32 @@ function walkPos(w,now,a){
   a.x=p0[0]+(p1[0]-p0[0])*f;a.y=p0[1]+(p1[1]-p0[1])*f;
 }
 /* mode terhubung: agen standby (santai berkeliling), baru duduk bekerja saat diberi perintah */
+/* mode terhubung: posisi agen standby ditentukan oleh jam dinding (bukan acak), sehingga setelah refresh tetap di tempat yang sama */
+const LV_SL=70000;
+function detLeis(a,now){
+  const k=Math.floor(now/LV_SL),off=(now-k*LV_SL)/1000;
+  const nd=j=>pickLeis(a,mb(hs(a.id+'lv'+j)));
+  let from=nd(k-1),to=nd(k);
+  if(from===to){const alt=pickLeis(a,mb(hs(a.id+'lvb'+k)),to);if(alt)from=alt;}
+  return {from,to,w:from===to?null:mkWalk(from,to,0),off};
+}
 function applyLive(a,now){
-  const L=a._lv||(a._lv={m:'idle',until:now+1500,node:null});
+  const L=a._lv||(a._lv={m:'det'});
   const busy=a.busy>0,seat='s'+a.desk;
   if(busy&&L.m!=='toDesk'&&L.m!=='desk'){L.m='toDesk';L.w=liveWalk(a,seat,now);}
-  else if(!busy&&(L.m==='toDesk'||L.m==='desk')){L.m='idle';L.until=now+3000;L.node=null;}
+  else if(!busy&&(L.m==='toDesk'||L.m==='desk')){const d=detLeis(a,now);L.m='back';L.tg=d.to;L.w=liveWalk(a,d.to,now);}
   if(L.m==='toDesk'){
     walkPos(L.w,now,a);a.state='walk';a.dest='out';a.act='Menuju meja';
     if(now>=L.w.t1)L.m='desk';
   }else if(L.m==='desk'){
     const p=SEATS[a.desk];a.x=p[0];a.y=p[1];a.state='work';a.dest=null;a.act=a.work[Math.floor(now/9000)%a.work.length];
-  }else if(L.m==='walk'){
-    walkPos(L.w,now,a);a.state='walk';a.dest=L.tg;
-    if(now>=L.w.t1){L.m='idle';L.until=now+(14+Math.random()*16)*1000;const p=NODES[L.tg];a.x=p[0];a.y=p[1];L.node=(L.tg===seat)?null:L.tg;}
+  }else if(L.m==='back'){
+    walkPos(L.w,now,a);a.state='walk';a.dest=L.tg;a.act='Kembali bersantai';
+    if(now>=L.w.t1)L.m='det';
   }else{
-    if(L.node){const p=NODES[L.node];a.x=p[0];a.y=p[1];}
-    a.state=/^G\d$/.test(L.node||'')?'shoot':'idle';a.dest=L.node;a.act=SPOT[L.node]||'Tidak ada tugas, mau santai';
-    if(now>=L.until){
-      /* tanpa tugas: pergi ke ruang tamu, ruang santai, atau ruang bermain */
-      const nx=pickLeis(a,Math.random,L.node);
-      L.tg=nx;L.m='walk';L.w=liveWalk(a,nx,now);a.state='walk';
-    }
+    const d=detLeis(a,now);
+    if(d.w&&d.off<d.w.t1){walkPos(d.w,d.off*1000,a);a.state='walk';a.dest=d.to;a.act='Berjalan ke '+(SPOT[d.to]||'tempat santai');}
+    else{const p=NODES[d.to];a.x=p[0];a.y=p[1];a.state=/^G\d$/.test(d.to)?'shoot':'idle';a.dest=d.to;a.act=SPOT[d.to]||'Tidak ada tugas, mau santai';}
   }
   a.loc=(a.x<10&&a.y>10.05&&a.y<20)?'meet':'work';
   a.auto=(a.state==='idle')?{text:a.act}:(a.state==='shoot'&&Math.floor(now/6000)%2===0&&now%6000<3500?{text:SHOUT[hs(a.id+Math.floor(now/6000))%SHOUT.length]}:null);
@@ -2656,8 +2661,11 @@ const GRT=()=>{const h=new Date().getHours();return h<11?'Pagi':h<15?'Siang':h<1
 const fillT=(t,o,k)=>t.replace(/\{o\}/g,callName(o)).replace(/\{g\}/g,GRT()).replace(/\{T\}/g,k||'');
 const rp=arr=>arr[Math.floor(Math.random()*arr.length)];
 
+const CHK='agentOffice.chit.v1';let CHIT=[];
+try{CHIT=JSON.parse(localStorage.getItem(CHK)||'[]');if(!Array.isArray(CHIT))CHIT=[];}catch(e){CHIT=[];}
+function chitSave(a,text){CHIT.push({t:Date.now(),id:a.id,text});CHIT=CHIT.filter(e=>Date.now()-e.t<3600e3).slice(-60);try{localStorage.setItem(CHK,JSON.stringify(CHIT));}catch(e){}}
 function cvSay(a,text,dur){
-  a.bubble={text,ttl:dur};
+  a.bubble={text,ttl:dur};chitSave(a,text);
   const near=msgs.scrollHeight-msgs.scrollTop-msgs.clientHeight<70,st=msgs.scrollTop;
   const r=addMsg(a,text,'',Date.now(),false);r.row.classList.add('chit');
   const ch=msgs.querySelectorAll('.msg.chit');
@@ -4141,6 +4149,7 @@ $('#online').textContent=String(AG.length);
   AG.forEach(a=>{const t=clockInTime(a);if(t<=now)items.push({t,a,text:'clocked in',sys:'sys'});});
   {const seen=new Set();eventsBetween(now-12*60000,now).forEach(e=>{if(!e.sys){if(seen.has(e.text))return;seen.add(e.text);recent.push(e.text);}items.push({t:e.t,a:e.who,text:e.text,sys:e.sys?'sys':''});});}
   log.filter(e=>now-e.t<45*60000&&byId(e.id)).forEach(e=>items.push({t:e.t,a:byId(e.id),text:e.text,sys:e.sys}));
+  CHIT.filter(e=>now-e.t<45*60000&&byId(e.id)).forEach(e=>items.push({t:e.t,a:byId(e.id),text:e.text,sys:''}));
   items.sort((p,q)=>p.t-q.t).forEach(i=>addMsg(i.a,i.text,i.sys,i.t,false));
   addMsg(boss,'Ketik /help untuk melihat perintah. Klik GEMINI di bawah chat untuk menghubungkan agen ke Google AI Studio.','hint',now);
   refreshTasks(now);
