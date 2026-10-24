@@ -2955,7 +2955,7 @@ async function proposeTask(who,full,ut){
     ut.ap='ok';ut.at=Date.now();save();refreshTasks(Date.now());
     acts.textContent=label;
     addMsg(boss,'Disetujui: '+title+(prompt!==full?' (sesuai usulan)':''),'sys',Date.now(),true);
-    if(HAS()&&!isImgReq(full))teamRun(who,full,ut,prompt!==full?alt:null);else if(GM.key){if(isCarouselReq(full))carouselRun(who,prompt,ut);else gemRun(who,prompt,true,ut,'img');}else if(isImgReq(full))speak(who,'Saya butuh Gemini untuk membuat gambarnya. Hubungkan GEMINI dulu ya.',Date.now(),true);else speak(who,'Siap, mulai dikerjakan bersama tim.',Date.now(),true);
+    if(HAS()&&!isImgReq(full))teamRun(who,full,ut,prompt!==full?alt:null);else if(HAS()){if(isCarouselReq(full))carouselRun(who,prompt,ut);else gemRun(who,prompt,true,ut,'img');}else if(isImgReq(full))speak(who,'Saya butuh Gemini untuk membuat gambarnya. Hubungkan GEMINI dulu ya.',Date.now(),true);else speak(who,'Siap, mulai dikerjakan bersama tim.',Date.now(),true);
   };
   const no=()=>{
     if(ut.ap!=='pending')return;
@@ -3257,7 +3257,7 @@ function reviseBox(rec,onSend){
 }
 function reviseRun(rec,instr){
   if(!HAS()){addMsg(boss,'Revisi butuh AI yang aktif (Gemini atau DeepSeek). Klik tombol AI KEY di bawah chat.','hint');return;}
-  if(rec.imgs&&rec.imgs.length&&!GM.key){addMsg(boss,'Merevisi gambar butuh Gemini. DeepSeek hanya untuk teks.','hint');return;}
+  if(rec.imgs&&rec.imgs.length&&!rec.carousel&&!GM.key){addMsg(boss,'Merevisi gambar butuh Gemini. Anda bisa minta gambar baru dengan /gambar.','hint');return;}
   const a=byId(rec.agent)||AG[1],img=!!(rec.imgs&&rec.imgs.length),orig=rec.orig||rec.prompt,h=!!htmlOf(rec.text);
   if(rec.carousel){addMsg(boss,'Revisi untuk '+a.name+': '+instr,'sys',Date.now(),true);carouselRun(a,orig+'\n\nRevisi dari CEO (terapkan pada seluruh slide): '+instr+(rec.text?'\n\nCaption sebelumnya:\n'+rec.text.slice(0,1500):''),null,{title:'Revisi: '+instr.slice(0,80),from:rec});return;}
   const prompt='Ini REVISI atas hasil kerjamu sebelumnya.\nPermintaan awal CEO: "'+orig+'"\n\nHasil sebelumnya:\n'+rec.text.slice(0,40000)+'\n\nInstruksi revisi dari CEO: '+instr+'\n\nTerapkan revisi lalu berikan hasil lengkap yang sudah diperbarui, bukan hanya bagian yang berubah.'+(h?' Berikan SATU file HTML lengkap dalam satu blok ```html.':'')+(img?' Ubah gambar yang dilampirkan sesuai instruksi.':'');
@@ -3741,7 +3741,7 @@ async function svgSlides(a,items,style,context,signal,ratio){
   if(!pngs.length)throw new Error('Model teks tidak menghasilkan SVG yang valid. Coba lagi.');
   return pngs;
 }
-const SVG_NOTE='**Catatan:** model gambar Gemini tidak bisa dipakai saat ini (biasanya kuota habis atau akun gratis), jadi gambar dibuat sebagai grafis vektor oleh model teks.';
+const SVG_NOTE='**Catatan:** gambar dibuat sebagai grafis vektor (SVG) oleh model teks, karena model gambar Gemini tidak tersedia (belum ada key Gemini, kuota habis, atau akun gratis).';
 
 /* ---------- carousel: rancang slide, lalu buat tiap slide sebagai gambar dengan gaya seragam ---------- */
 async function carouselRun(a,prompt,ut,meta){
@@ -3764,10 +3764,11 @@ async function carouselRun(a,prompt,ut,meta){
       if(ac.signal.aborted)throw Object.assign(new Error('x'),{name:'AbortError'});
       r.tx.classList.add('wait');r.tx.textContent='Membuat slide '+(i+1)+' dari '+slides.length+'…';
       const sl=slides[i],ip='Buat SATU GAMBAR desain slide carousel Instagram, rasio 4:5 vertikal. Konteks: '+prompt+'. Gaya visual yang seragam di semua slide: '+style+'. Ini slide '+(i+1)+' dari '+slides.length+'. Teks yang HARUS tampil di gambar, besar, tebal, mudah dibaca, dengan ejaan persis: judul "'+(sl.title||'')+'"'+(sl.text?' dan teks "'+sl.text+'"':'')+'. Visual: '+(sl.visual||'')+'.'+(i?' Samakan gaya, warna, dan tipografi dengan gambar referensi terlampir.':'')+' Keluaran harus berupa gambar, bukan teks.';
+      if(!GM.key){svgMode=true;break;}
       try{const o=await gImage(a,ip,ac.signal,i&&imgs[0]?[imgs[0]]:null,{ratio:'4:5'});imgs.push(o.imgs[0]);if(i<slides.length-1)await sleep(1200);}
       catch(e){if(e&&e.name==='AbortError')throw e;if(!imgs.length&&isQuotaErr(e)){svgMode=true;break;}failed++;if(!imgs.length&&i>=1&&failed>=2)throw e;}
     }
-    if(svgMode){r.tx.classList.add('wait');r.tx.textContent='Model gambar tidak tersedia (kuota habis). Membuat slide sebagai grafis vektor…';imgs.push(...await svgSlides(a,slides,style,prompt,ac.signal,'4:5'));}
+    if(svgMode){r.tx.classList.add('wait');r.tx.textContent='Membuat slide sebagai grafis vektor…';imgs.push(...await svgSlides(a,slides,style,prompt,ac.signal,'4:5'));}
     if(!imgs.length)throw new Error('Tidak ada slide yang berhasil dibuat. Coba lagi.');
     const cap=((P&&P.caption)||'').trim();
     const text=(svgMode?SVG_NOTE+'\n\n':'')+(cap?'**Caption:**\n\n'+cap:'Carousel selesai.')+(failed?'\n\n_('+failed+' slide gagal dibuat. Tekan Revisi untuk mencoba lagi.)_':'');
@@ -3800,9 +3801,9 @@ async function gemRun(a,prompt,task,ut,mode,meta){
  try{
   if(img){r.tx.classList.add('wait');r.tx.textContent='Sedang membuat gambar…';}
   let svgUsed=false;
-  const out=img?await gImage(a,prompt,ac.signal,meta&&meta.refs,{ratio:meta?'':inferRatio(prompt)}).catch(async e=>{
+  const out=img?await (GM.key?gImage(a,prompt,ac.signal,meta&&meta.refs,{ratio:meta?'':inferRatio(prompt)}):Promise.reject(Object.assign(new Error('x'),{noModel:true}))).catch(async e=>{
     if(!isQuotaErr(e)||(meta&&meta.refs&&meta.refs.length)||(e&&e.name==='AbortError'))throw e;
-    r.tx.classList.add('wait');r.tx.textContent='Model gambar tidak tersedia (kuota habis). Membuat gambar sebagai grafis vektor…';
+    r.tx.classList.add('wait');r.tx.textContent='Membuat gambar sebagai grafis vektor…';
     svgUsed=true;
     return {text:'',imgs:await svgSlides(a,[{visual:prompt}],'desain modern, bersih, kontras tinggi',prompt,ac.signal,meta?'':inferRatio(prompt)),finish:''};
   }):await gStream(a,prompt,task,ac.signal,t=>{streaming=true;cur=t;if(!raf)raf=requestAnimationFrame(paint);},m=>{if(!cur){r.tx.classList.add('wait');r.tx.textContent=m;}a.bubble={text:'Mencoba lagi…',ttl:1.4};});
@@ -4005,8 +4006,9 @@ function respond(txt,forced){
   if(!ai){if(HAS())addMsg(byId('boss'),'AI sedang OFF, jadi agen tidak membalas. Nyalakan saklar AI di bagian atas chat.','hint');return;}
   const gm=txt.match(/^\/gambar\b\s*(.*)/i),wantImg=!!gm||isImgReq(txt);
   if(gm&&!gm[1].trim()){addMsg(byId('boss'),'Contoh: /gambar kucing astronot di bulan, gaya pixel art','hint');return;}
-  if(wantImg&&!GM.key){addMsg(byId('boss'),'Membuat gambar atau foto butuh Gemini (DeepSeek hanya untuk teks). Klik tombol AI KEY di bawah chat lalu masukkan API key Gemini.','hint');return;}
-  if(GM.key&&wantImg&&isCarouselReq(txt)){carouselRun(forced||byId('nova'),txt,null);return;}
+  if(wantImg&&!HAS()){addMsg(byId('boss'),'Membuat gambar butuh AI. Klik tombol AI KEY di bawah chat lalu masukkan API key Gemini atau DeepSeek.','hint');return;}
+  if(wantImg&&!GM.key&&!window.__dsImgHint){window.__dsImgHint=1;addMsg(byId('boss'),'Tanpa Gemini, gambar dibuat sebagai grafis vektor (SVG) oleh DeepSeek: cocok untuk poster, infografis, dan slide, tapi bukan foto realistis.','hint');}
+  if(HAS()&&wantImg&&isCarouselReq(txt)){carouselRun(forced||byId('nova'),txt,null);return;}
   if(HAS()){gemRun(forced||(wantImg?byId('nova'):pickAgent(txt)),gm?gm[1].trim():txt,false,null,wantImg?'img':undefined);return;}
   if(!HAS()&&skills.some(k=>k.on)&&!window.__skHint){window.__skHint=1;addMsg(byId('boss'),'Skill yang Anda unggah baru berpengaruh setelah Gemini atau DeepSeek terhubung. Sekarang balasan agen masih simulasi.','hint');}
   if(!hintedKey){hintedKey=true;addMsg(byId('boss'),'Balasan ini masih simulasi. Klik tombol AI KEY di bawah chat lalu masukkan API key Gemini atau DeepSeek agar agen menjawab sungguhan.','hint');}
