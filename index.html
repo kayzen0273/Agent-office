@@ -1711,13 +1711,19 @@ add(28,()=>{bx(15.25,12.6,0,.1,.1,34,'#2b303b');bx(15.05,12.4,34,.5,.5,6,'#ffe9b
 G(2,4);
 [[10.9,16.7],[15.4,21.7],[10.9,21.7]].forEach(([x,y])=>add(x+y+.2,()=>plant(x,y)));
 /* rak buku di dinding utara */
-add(32,()=>{/* key dinaikkan agar digambar setelah dinding kaca y=20 */
-  bx(12,16.15,0,3.6,.55,36,'#5a3720');
-  const F=(u,z)=>P(12+u,16.7,z),bc=['#c8553d','#3f7fd0','#e8c23a','#5aa86a','#8a5ac0','#e8e0cc'];
-  poly([F(.08,3),F(3.52,3),F(3.52,34),F(.08,34)],'#2a1b10');
-  for(let r=0;r<4;r++){const z=4+r*8;poly([F(.08,z+7),F(3.52,z+7),F(3.52,z+7.8),F(.08,z+7.8)],'#7a5230');
-    for(let k=0;k<14;k++){const h=4.6+((r*3+k*5)%4)*.8;poly([F(.15+k*.24,z),F(.15+k*.24+.19,z),F(.15+k*.24+.19,z+h),F(.15+k*.24,z+h)],bc[(r+k)%6]);}}
-});
+/* rak buku dipecah per 0,6 petak: tiap potongan punya urutan gambar sendiri, setelah dinding kaca y=20 tetapi sebelum agen yang berdiri di depannya (sebelumnya satu key tetap menutupi Einstein) */
+{const SW=.6,NS=6,bcA=['#c8553d','#3f7fd0','#e8c23a','#5aa86a','#8a5ac0','#e8e0cc'];
+for(let i=0;i<NS;i++){const u0=i*SW,u1=u0+SW,last=i===NS-1;
+  add(28.6+u1,()=>{
+    const X0=12+u0,X1=12+u1,y0=16.15,y1=16.7,H=36,c='#5a3720';
+    poly([P(X0,y0,H),P(X1,y0,H),P(X1,y1,H),P(X0,y1,H)],sh(c,1.12));
+    poly([P(X0,y1,0),P(X1,y1,0),P(X1,y1,H),P(X0,y1,H)],sh(c,.86));
+    if(last)poly([P(X1,y0,0),P(X1,y1,0),P(X1,y1,H),P(X1,y0,H)],sh(c,.64));
+    const F=(u,z)=>P(12+u,16.7,z),ua=Math.max(.08,u0),ub=Math.min(3.52,u1);
+    poly([F(ua,3),F(ub,3),F(ub,34),F(ua,34)],'#2a1b10');
+    for(let r=0;r<4;r++){const z=4+r*8;poly([F(ua,z+7),F(ub,z+7),F(ub,z+7.8),F(ua,z+7.8)],'#7a5230');
+      for(let k=0;k<14;k++){const bu=.15+k*.24;if(bu<u0-1e-9||bu>=u1-1e-9)continue;const h=4.6+((r*3+k*5)%4)*.8;poly([F(bu,z),F(bu+.19,z),F(bu+.19,z+h),F(bu,z+h)],bcA[(r+k)%6]);}}
+  });}}
 /* matras yoga & puf */
 add(-0.8,()=>{
   [[12.3,17.45,'#5aa07a']].forEach(([x,y,c])=>{
