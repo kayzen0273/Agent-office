@@ -3699,6 +3699,18 @@ async function dsModels(){
 const CLAPI='https://api.anthropic.com/v1/';
 const CL_FALL=['claude-sonnet-5-5','claude-haiku-5-5','claude-opus-5-5'];
 const clHeaders=()=>({'Content-Type':'application/json','x-api-key':CL.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'});
+async function clFetch(path,opts){
+ const direct=()=>fetch(CLAPI+path,Object.assign({},opts,{headers:clHeaders()}));
+ const prox=()=>fetch('/api/claude?path='+encodeURIComponent(path.split('?')[0]),Object.assign({},opts,{headers:{'Content-Type':'application/json','x-api-key':CL.key}}));
+ if(CL.proxy){try{const r=await prox();if(r.status!==404)return r;}catch(e){if(e&&e.name==='AbortError')throw e;}CL.proxy=false;}
+ try{return await direct();}
+ catch(e){
+  if(e&&e.name==='AbortError')throw e;
+  let r=null;try{r=await prox();}catch(x){if(x&&x.name==='AbortError')throw x;}
+  if(!r||r.status===404){const er=new Error('Tidak bisa menghubungi Claude langsung dari browser (kemungkinan diblokir jaringan/CORS), dan jalur cadangan /api/claude belum terpasang di situs Anda. Unggah file api/claude.js ke proyek Vercel (satu folder dengan index.html) lalu deploy ulang.');er.net=1;throw er;}
+  CL.proxy=true;return r;
+ }
+}
 async function clErr(res){
  let m='';try{const j=await res.json();m=(j.error&&j.error.message)||'';}catch(e){}
  const c=res.status;
@@ -3715,8 +3727,8 @@ async function clStream1(a,prompt,task,signal,onText,model){
  const h=hist[a.id]=hist[a.id]||[];
  const msgs=h.map(x=>({role:x.role==='model'?'assistant':'user',content:(x.parts&&x.parts[0]&&x.parts[0].text)||'.'})).concat([{role:'user',content:prompt}]);
  let res;
- try{res=await fetch(CLAPI+'messages',{method:'POST',signal,headers:clHeaders(),body:JSON.stringify({model,max_tokens:task?16000:8192,system:sysPrompt(a,task,prompt),messages:msgs,stream:true})});}
- catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error('Tidak bisa menghubungi Claude (api.anthropic.com). Periksa koneksi internet, VPN, atau ekstensi pemblokir.');er.net=1;throw er;}
+ try{res=await clFetch('messages',{method:'POST',signal,body:JSON.stringify({model,max_tokens:task?16000:8192,system:sysPrompt(a,task,prompt),messages:msgs,stream:true})});}
+ catch(e){if(e&&e.name==='AbortError')throw e;if(e&&e.net)throw e;const er=new Error('Tidak bisa menghubungi Claude. Periksa koneksi internet, VPN, atau ekstensi pemblokir.');er.net=1;throw er;}
  if(!res.ok){const er=new Error(await clErr(res));er.code=res.status;throw er;}
  const rd=res.body.getReader(),dec=new TextDecoder();
  let buf='',full='',finish='',broke=false,apiErr='';
@@ -3769,7 +3781,7 @@ async function clStream(a,prompt,task,signal,onText,onStatus){
 }
 async function clModels(){
  let res;
- try{res=await fetch(CLAPI+'models?limit=50',{headers:clHeaders()});}catch(e){throw new Error('Tidak bisa menghubungi Claude. Periksa koneksi internet, VPN, atau ekstensi pemblokir.');}
+ try{res=await clFetch('models?limit=50',{method:'GET'});}catch(e){throw new Error(e&&e.net?e.message:'Tidak bisa menghubungi Claude. Periksa koneksi internet, VPN, atau ekstensi pemblokir.');}
  if(!res.ok)throw new Error(await clErr(res));
  const j=await res.json();return (j.data||[]).map(m=>m.id);
 }
