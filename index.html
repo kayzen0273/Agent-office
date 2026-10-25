@@ -2580,8 +2580,9 @@ const OB_SEGS=(()=>{
   go(OB_TOUR[0][0]);
   return segs;
 })();
+const a_off=()=>OB._off||0;
 function applyOB(nowMs){
-  const a=OB,s=nowMs/1000,T=OB_SEGS[OB_SEGS.length-1].t1,off=s%T;
+  const a=OB,s=(nowMs-(a_off()))/1000,T=OB_SEGS[OB_SEGS.length-1].t1,off=s%T;
   let g=OB_SEGS[OB_SEGS.length-1];
   for(const x of OB_SEGS){if(off<x.t1){g=x;break;}}
   a.auto=null;a.ob=null;a.loc='work';
@@ -2599,7 +2600,12 @@ function applyOB(nowMs){
 }
 function update(dt){
   const now=Date.now();
+  /* OB yang sedang ngobrol berhenti total: jalur kerjanya dibekukan, lalu dilanjutkan dari titik yang sama */
+  const obc=!!(OB._cv&&OB._cv.t==='chat');
+  if(obc)OB._off=(OB._off||0)+dt*1000;
   applyOB(now);
+  if(obc){OB.state='idle';OB.ob=null;OB.act='Ngobrol santai';OB.auto=null;}
+  if(OB.bubble){OB.bubble.ttl-=dt;if(OB.bubble.ttl<=0)OB.bubble=null;}
   AG.forEach(a=>{
     applySched(a,now);
     if(a.bubble){a.bubble.ttl-=dt;if(a.bubble.ttl<=0)a.bubble=null;}
@@ -2611,6 +2617,7 @@ function update(dt){
 const msgs=$('#msgs');
 const AV={};
 AG.forEach(a=>{AV[a.id]=AVS[a.id];});
+{const c=document.createElement('canvas');c.width=c.height=32;const x=c.getContext('2d');x.fillStyle='#2a3d52';x.fillRect(0,0,32,32);x.fillStyle=OB.shirt;x.fillRect(6,22,20,10);x.fillStyle=OB.skin;x.fillRect(9,8,14,14);x.fillStyle=OB.hair;x.fillRect(8,5,16,6);x.fillStyle='#1a1b22';x.fillRect(12,15,2,2);x.fillRect(19,15,2,2);AV.ob=c.toDataURL();}
 /* log pribadi (tersimpan di browser) */
 const LOGKEY='agentOffice.v1';
 let log=[];
@@ -2625,7 +2632,7 @@ function addMsg(a,text,sys,t,keep){
   const body=document.createElement('div');
   const hd=document.createElement('div');hd.className='hd';
   const nm=document.createElement('span');nm.className='nm';nm.textContent=a.name;nm.style.color=a.color;
-  const rl=document.createElement('span');rl.className='rl';rl.textContent=a.guest?'TAMU':a.human?'CEO':'AI';rl.style.color=a.color;
+  const rl=document.createElement('span');rl.className='rl';rl.textContent=a.guest?'TAMU':a.human?'CEO':a.id==='ob'?'OB':'AI';rl.style.color=a.color;
   const tm=document.createElement('span');tm.className='tm';tm.textContent=hhmm(t);
   hd.append(nm,rl,tm);
   const tx=document.createElement('div');tx.className='tx'+(sys==='sys'?' sy':sys==='hint'?' hint':'');tx.textContent=text;
@@ -2775,8 +2782,8 @@ const CV=[],COOL={},TT={},TTA={},USED=new Set();
 let BT=0,cvNext=0,cvTaskNext=0;
 const pairKey=(p,q)=>p.id<q.id?p.id+'|'+q.id:q.id+'|'+p.id;
 const areaOf=a=>{const d=a.dest;if(typeof d!=='string')return null;return /^T\d$/.test(d)?'T':/^L\d$/.test(d)?'L':/^B\d$/.test(d)?'B':d==='cooler'?'P':'O';};
-const cvFree=a=>!a._cv&&!a.pr&&!a.pose&&!(a.busy>0)&&(a.state==='idle'||a.state==='walk');
-const callName=o=>o.human?'Bos':o.name;
+const cvFree=a=>a===OB?!a._cv:!a._cv&&!a.pr&&!a.pose&&!(a.busy>0)&&(a.state==='idle'||a.state==='walk');
+const callName=o=>o.human?'Bos':o===OB?'Mas OB':o.name;
 const GRT=()=>{const h=new Date().getHours();return h<11?'Pagi':h<15?'Siang':h<18?'Sore':'Malam';};
 const fillT=(t,o,k)=>t.replace(/\{o\}/g,callName(o)).replace(/\{g\}/g,GRT()).replace(/\{T\}/g,k||'');
 const rp=arr=>arr[Math.floor(Math.random()*arr.length)];
@@ -2830,7 +2837,7 @@ async function gemChatBatch(c){
   const per=a=>a.name+' ('+a.role+'): '+(PERSONA[a.id]||'CEO pendiri kantor, tegas tapi hangat, dipanggil Bos.');
   const hist=c.lines.slice(-10).map(l=>l.a.name+': '+l.t).join('\n');
   const used=c.lines.slice(0,-10).map(l=>l.t.slice(0,40)).slice(-20).join(' | ');
-  const prompt='Kamu penulis dialog sitkom kantor berbahasa Indonesia santai. Tulis LANJUTAN obrolan dua rekan kerja yang sedang santai bareng di kantor.\nA = '+per(p)+'\nB = '+per(q)+'\nKeadaan kantor sekarang (boleh disinggung bila pas): '+liveCtx(p,q)+'\nObrolan sejauh ini:\n'+(hist||'(baru mulai)')+(used?'\nTopik/kalimat awal yang JANGAN diulang: '+used:'')+'\n\nTulis 8 baris lanjutan, mulai dari '+(nextA?'A':'B')+' lalu bergantian. Aturan: tiap baris 1 sampai 2 kalimat pendek (maks 170 karakter); natural, spesifik, ada humor, opini, cerita kecil, atau debat ringan; topik boleh bergeser secara alami; emoji secukupnya, tidak di setiap baris; sesuai karakter masing-masing; panggil CEO dengan "Bos"; JANGAN mengulang kalimat atau topik yang sudah ada; '+(fin?'ini bagian terakhir, boleh ditutup santai dan berpamitan.':'JANGAN menutup atau berpamitan, obrolan masih lanjut.')+'\nBalas HANYA JSON array: [{"s":"A","t":"..."},{"s":"B","t":"..."}]';
+  const prompt='Kamu penulis dialog sitkom kantor berbahasa Indonesia santai. Tulis LANJUTAN obrolan dua rekan kerja yang sedang santai bareng di kantor.\nA = '+per(p)+'\nB = '+per(q)+'\nKeadaan kantor sekarang (boleh disinggung bila pas): '+liveCtx(p,q)+(c.ob?'\nCatatan: salah satu dari mereka adalah OB (Office Boy) yang sedang berhenti ngobrol di sela bersih-bersih. Topik HARUS segar dan beragam, bukan soal kerjaan terus. Topik pemantik (boleh dibelokkan): '+rp(OBTOPICS):'')+'\nObrolan sejauh ini:\n'+(hist||'(baru mulai)')+(used?'\nTopik/kalimat awal yang JANGAN diulang: '+used:'')+'\n\nTulis 8 baris lanjutan, mulai dari '+(nextA?'A':'B')+' lalu bergantian. Aturan: tiap baris 1 sampai 2 kalimat pendek (maks 170 karakter); natural, spesifik, ada humor, opini, cerita kecil, atau debat ringan; topik boleh bergeser secara alami; emoji secukupnya, tidak di setiap baris; sesuai karakter masing-masing; panggil CEO dengan "Bos"; JANGAN mengulang kalimat atau topik yang sudah ada; '+(fin?'ini bagian terakhir, boleh ditutup santai dan berpamitan.':'JANGAN menutup atau berpamitan, obrolan masih lanjut.')+'\nBalas HANYA JSON array: [{"s":"A","t":"..."},{"s":"B","t":"..."}]';
   for(const model of [...new Set([GM.model,'gemini-flash-lite-latest'])]){
     try{
       const res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{temperature:1.1,maxOutputTokens:1800,responseMimeType:'application/json'}})});
@@ -2853,7 +2860,7 @@ function extendChat(c){
     gemChatBatch(c).then(arr=>{c.pend=false;if(arr&&arr.length)c.lines.push(...arr);else c.aiBad=true;}).catch(()=>{c.pend=false;c.aiBad=true;});
     return;
   }
-  const L=chunkLines(c);
+  const L=c.ob?obChunk(c):chunkLines(c);
   if(L&&L.length)c.lines.push(...L);else c.max=c.lines.length;
 }
 
@@ -2913,6 +2920,85 @@ function startTask(k,tm,n){
   const L=[{a:ow,t:rp(bank[ow.id]||bank.claude).replace(/\{T\}/g,T)},{a:rs,t:rp(SERR[rs.id]||SERR.claude)},{a:ow,t:rp(SERA)}];
   cvMake('task',tm,L,0);
 }
+
+/* ---------- OB ikut menyapa dan ngobrol ---------- */
+const OBCHATS=[
+ {f:'o',l:["Permisi, {o}. Boleh saya sapu sebentar di sini? 🧹","Boleh dong, {o}. Maaf ya, tadi kopiku tumpah dikit. ☕😅","Tenang, itu rezeki saya hari ini. Haha 😂","Hahaha 🤣 Btw, kamu sudah ngopi belum?","Sudah tiga gelas, tapi perut belum diisi. 😩","Nah, itu bahaya. Di pantry ada roti sisa rapat tadi, lho. 🍞","Serius?! Kamu penyelamat hidupku, {o}. 🙏","Jangan bilang siapa-siapa ya, nanti rebutan. 🤫","Rahasia aman. Besok saya traktir kopi. ☕","Siap! Kopi susu, gulanya sedikit. 😎"]},
+ {f:'a',l:["Eh, {o}! Lantainya kinclong banget. Kamu yang pel semua ini? ✨","Iya, {o}. Mulai dari subuh. Tapi cuma bertahan sejam sebelum ada yang menginjak. 😭","Hahaha 🤣 Itu kami. Maaf ya, kami ini kayak kawanan bebek.","Santai. Yang penting jangan bawa lumpur. Kemarin ada jejak sepatu sampai ruang rapat. 👞","Wah, kayaknya aku tersangka utamanya. 🙈","Haha, saya sudah curiga dari ukuran sepatunya, {o}. 😏","Mati aku. Mulai besok sepatuku kulap dulu di depan. 🫡","Nah gitu dong. Terima kasih ya, {o}. Kantor jadi enak dilihat. 😊","Justru aku yang terima kasih, kamu sudah kerja keras. ❤️","Aduh, jadi terharu. Lanjut nyapu dulu ya! 🧹"]},
+ {f:'o',l:["{o}, tadi saya nemu kertas macet di printer. Itu printer punya dendam kayaknya. 🖨️","Haha 🤣 dia memang temperamental. Kamu bisa betulin?","Sekali ketuk halus, jalan lagi. Rahasia OB senior. 😎","Wah, ajarin dong. Aku sering kesel sama dia.","Kuncinya: ajak ngobrol dulu, baru cabut kertasnya pelan-pelan.","Ngobrol sama printer? Kamu serius? 😂","Serius. Kadang dia cuma butuh didengerin. Kayak manusia aja. 🤭","Oke, nanti kucoba. Kalau gagal, aku panggil kamu.","Siap, tapi bayarannya sepotong gorengan ya. 🍤","Deal. Gorengan buat sang tabib printer! 🤝"]},
+ {f:'a',l:["{o}, kamu nggak capek keliling terus dari pagi? 😮","Capek sih, tapi lumayan olahraga gratis. Langkah saya bisa dua puluh ribu sehari. 🚶","Wah, kalah jauh aku yang cuma dari meja ke pantry. 😅","Tapi kalian kerja pakai otak, itu juga capek, {o}. 🧠","Makasih udah ngerti. Padahal sering lupa bilang makasih ke yang beresin meja ya. 🙏","Nggak apa-apa. Yang penting jangan lupa buang sampah ke tempatnya. 😅","Siap, mulai sekarang kubuang sendiri. Mau kubuatkan teh hangat? 🍵","Wah, mau banget! Tapi jangan repot ya.","Nggak repot. Itu cara bilang makasih. 😊","Kamu baik banget, {o}. ❤️"]},
+ {f:'a',l:["{o}, jujur ya, meja siapa yang paling berantakan di kantor ini? 🕵️","Waduh, pertanyaan jebakan. Saya tutup mulut. 🤐","Ayo dong, janji nggak bilang siapa-siapa.","Hmm... yang jelas bukan kamu. Tapi ada yang cangkir kopinya sampai tiga di satu meja. ☕☕☕","HAHA 🤣 aku bisa menebak. Sudah, jangan sebut nama. 🤫","Saya nggak bilang apa-apa ya. Saya cuma bersih-bersih. 😇","Diplomatis banget. Kamu cocok jadi juru bicara. 😂","Juru bicara sapu, siap! 🧹","Hahaha. Oke, aku jadi malu, mejaku kurapikan nanti.","Nah, itu baru {o} yang saya kenal. 👏"]},
+ {f:'o',l:["{g}, {o}! Sehat hari ini? 😊","{g}! Alhamdulillah sehat. Kamu sendiri?","Sehat juga. Cuma pinggang sedikit protes gara-gara ngepel. 😅","Wah, jangan dipaksain. Istirahat dulu sebentar sana. 🙏","Nanti kalau lantai ruang santai sudah kelar. Janji. 🤞","Janji ya! Kalau perlu kuambilkan air minum.","Boleh, makasih. Kamu baik banget. 🥹","Itu gunanya teman sekantor. 🤝","Setuju. Semangat ya, {o}! 💪","Semangat juga buat kamu! ✨"]},
+ {f:'a',l:["{o}, menurutku mengepel itu lebih seru daripada menyapu. Setuju? 🧽","Hah?! Nggak! Menyapu itu seni. Mengepel cuma memindahkan air. 😤","Tapi habis dipel lantainya kinclong dan wangi. ✨","Menyapu dulu, baru dipel. Urutannya sakral, {o}. 🙄","Oke oke, OB memang punya filsafat sendiri. 😂","Filsafat lantai. Jangan remehkan. 🧐","Aku nyerah, kamu menang. Tapi wanginya tetap penting. 😌","Setuju, wanginya wajib. Damai? 🕊️","Damai! Sini tos. 🤝","Tos! Sekarang saya kerja lagi ya. 🧹"]}
+];
+const OBPASS=[
+ {f:'o',l:["Permisi, {o}, lantainya licin ya. ⚠️","Siap, Mas OB. Hati-hati langkahku! 😅"]},
+ {f:'a',l:["{g}, {o}! Semangat bersih-bersihnya! 💪","Makasih, {o}! Kantor harus kinclong. ✨"]},
+ {f:'o',l:["{g}, {o}. Sudah ngopi? ☕","Belum nih. Nanti mampir pantry ya."]},
+ {f:'a',l:["Hai {o}! Ruang santai sudah disapu?","Sudah dong. Tinggal lorongnya. 🧹","Mantap, makasih ya!"]},
+ {f:'o',l:["Eh {o}, awas bekas pel basah. 🚧","Oke, aku lewat pinggir. Thanks! 🙏"]}
+];
+/* ---- generator dialog OB yang selalu segar: topik diacak, diisi data kantor sungguhan (papan tugas, jam, kegiatan rekan, hari) ---- */
+const OB_SNK=['pisang goreng','bakwan','roti bakar','es teh manis','kopi susu','teh tarik','risoles','lemper','martabak mini','cilok','es cendol','tahu isi','onde-onde','kue lumpur','gorengan tempe','bubur kacang','klepon','nasi uduk'];
+const OB_ITEM=['klip kertas','kaus kaki sebelah','pulpen mahal','stiker lucu','struk belanja','kancing baju','kabel charger','kunci motor','koin seribuan','headset tanpa pasangan','permen mint','kartu nama'];
+const OB_HOB=['mancing','main gitar','berkebun','bersepeda','nonton bola','memasak','merakit RC','fotografi','baca komik','main catur','jalan pagi','ngoprek ponsel'];
+const OB_DRM=['punya warung kopi sendiri','keliling kota naik motor','buka toko online','naik gunung','punya kebun kecil','bisa main musik di panggung','buka bengkel kecil','kuliah lagi'];
+const OB_SMELL=['lavender','jeruk','pinus','melati','apel hijau','lemon'];
+const OB_WEA={'FULL DAYLIGHT':['Cerah banget hari ini, jendela jadi silau. ☀️','Panasnya sampai ke lantai, cepat kering habis dipel. 😎'],'NIGHT SHIFT':['Malam begini kantor sunyi, enak buat nyapu. 🌙','Lampu kota dari jendela cakep banget, ya. 🌃'],'GOLDEN HOUR':['Langit di jendela lagi oranye banget. 🌇','Sore begini cahayanya bikin lantai kelihatan emas. ✨'],'DAWN IS BREAKING':['Subuh-subuh kantor tenang, kayak punya sendiri. 🌅','Matahari baru naik, udaranya adem. 🌄']};
+const OBTOPICS=['jajanan favorit','kejadian lucu waktu bersih-bersih','barang aneh yang ditemukan di kantor','rencana akhir pekan','kenangan masa sekolah','hobi di luar kerja','hujan dan cuaca','serial atau film','musik yang lagi didengar','tips hemat','olahraga','kampung halaman','ponsel dan teknologi','hewan peliharaan','cita-cita','macet dan perjalanan','misteri cangkir yang ditinggal','cara tidur nyenyak','makanan khas daerah','cerita lucu keluarga'];
+const rN=(a,b)=>a+Math.floor(Math.random()*(b-a+1));
+const OBG=[
+ o=>{const s1=rp(OB_SNK),s2=rp(OB_SNK.filter(x=>x!==s1));return [['a',`{o}, tadi di depan ada yang jual ${s1}. Kamu sudah coba? 😋`],['o',rp([`Belum, {o}. Saya lebih suka ${s2}. 😅`,`Sudah dong, tadi sebelum mulai nyapu. 🤤`])],['a',rp([`Waduh, jadi ngiler. Besok kita beli bareng ya.`,`Selera kamu mantap juga. Harganya berapa?`])],['o',rp([`Cuma ${rN(2,9)} ribuan, {o}. Murah meriah. 💸`,`Murah kok, ${rN(2,8)} ribu. Tapi bikin nagih. 😂`])],['a',rp([`Nagih itu bahaya buat dompet, hahaha 🤣`,`Oke, besok pagi aku ikut antre. 🫡`])]];},
+ o=>{const T=tasks.filter(t=>t.text);if(!T.length)return null;const k=rp(T),t=cleanT(k.text),w=k.owner&&byId(k.owner);return [['a',`{o}, di papan tugas ada “${t}”. Kamu tahu siapa yang pegang? 👀`],['o',(w?`Katanya ${w.name} yang pegang. `:`Belum ada yang ambil kayaknya. `)+`Saya cuma OB, kebagian doa saja. 🤲`],['a',rp([`Doa OB itu ampuh, lho. Tugasnya jadi lancar.`,`Haha, doamu kuterima dengan senang hati. 😂`])],['o',rp([`Saya doakan “${t}” kelar sebelum jam pulang. 🙏`,`Kalau sudah selesai, kabari ya, biar saya rapikan mejanya. 🧹`])],['a',rp(['Siap, kamu orang pertama yang kukabari. 🫡','Deal! Nanti kuinfokan. 😄'])]];},
+ o=>{const W=AG.filter(a=>a!==o&&a.state==='work');if(!W.length)return null;const w=rp(W);return [['o',`{o}, tadi saya lewat, ${w.name} lagi ${String(actText(w)).toLowerCase()}. Serius banget mukanya. 😮`],['a',rp([`Dia memang begitu kalau lagi fokus. Jangan diganggu. 🤫`,`Hahaha, iya. Kita lewat pelan-pelan aja.`])],['o',rp([`Saya nyapunya jinjit tadi. Takut kedengaran. 😂`,`Saya taruh teh di meja tanpa suara. Ninja OB. 🥷`])],['a',rp([`Ninja OB! Kamu harus dapat penghargaan. 🏆`,`Kamu lebih sopan dari kita semua, deh.`])]];},
+ o=>{const h=new Date().getHours(),g=GRT().toLowerCase();return [['o',rp([`${GRT()} begini biasanya saya baru sempat duduk sebentar, {o}.`,`Sudah ${g} aja ya, {o}. Waktu cepat banget.`])],['a',rp([`Kamu sudah makan belum? Jangan sampai telat. 🍚`,`Hati-hati jangan kecapekan, {o}.`])],['o',h<11?`Sudah sarapan nasi uduk tadi. Aman. 💪`:h<15?`Belum, nanti habis lantai ruang bermain kelar. 😅`:h<18?`Tinggal ngepel lorong, habis itu bisa napas. 😮‍💨`:`Sebentar lagi lantai terakhir, abis itu pulang. 🌙`],['a',rp([`Semangat ya! Kalau butuh bantuan, panggil aku.`,`Mantap. Nanti kuseduhin teh, ya. 🍵`])]];},
+ o=>{const d=HARI[new Date().getDay()];return [['a',`Hari ${d} gini, kerjaanmu paling banyak di mana, {o}?`],['o',rp([`Kalau ${d} biasanya ruang rapat, {o}. Banyak bekas kopi. ☕`,`Ruang santai, {o}. Banyak yang rebahan sambil makan. 😂`,`Pantry. Cangkirnya berderet kayak pameran. 🏺`])],['a',rp([`Hahaha 🤣 itu pasti ulah kita semua.`,`Wah, maaf ya. Kami memang suka lupa.`])],['o',rp([`Santai, itu sudah tugas saya. Yang penting kalian semangat kerja. 💪`,`Tenang, asal tidak ada yang tumpah di karpet ya. 🙏`])]];},
+ o=>{const n=rN(8,22);return [['o',`Hari ini langkah saya sudah ${n} ribu, lho, {o}. 🚶`],['a',rp([`Gila! Itu mah jarak ke kota sebelah. 😮`,`Kamu pantas dikasih jam tangan pintar, {o}. ⌚`])],['o',rp([`Gratisan olahraga, lumayan. Cuma betis agak protes. 😅`,`Saya hitung dari tadi pagi pakai aplikasi. Capek tapi bangga. 😎`])],['a',rp([`Besok aku ikut jalan keliling kantor, biar sehat. 😄`,`Nanti kupijit... eh, kuambilkan air dingin aja ya. 🧊`])]];},
+ o=>{const i=rp(OB_ITEM);return [['o',`{o}, tadi di bawah sofa saya nemu ${i}. Punya kamu? 🤔`],['a',rp([`Hah? Aku cari itu dari kemarin! Makasih banget. 😭`,`Bukan punyaku, sih. Coba tanya yang lain. 🙈`])],['o',rp([`Syukurlah. Kalau belum ketemu pemiliknya, saya titip di pantry ya.`,`Ini sudah koleksi kelima minggu ini. Bisa buka museum. 🏛️`])],['a',rp([`Hahaha 🤣 Museum Barang Hilang Kantor!`,`Kamu detektif kantor sebenarnya, ya. 🕵️`])],['o',rp([`Detektif sapu. Spesialis kasus bawah meja. 😎`,`Kasus berikutnya: siapa yang ninggalin kulit kacang. 🥜`])]];},
+ o=>{const n=rN(2,7);return [['a',rp([`{o}, kalau tiba-tiba libur ${n} hari, kamu mau ngapain?`,`Pertanyaan iseng: libur ${n} hari, kamu pilih apa, {o}?`])],['o',rp([`Pulang kampung, ketemu emak. Itu yang paling saya tunggu. 🏡`,`Tidur dulu dua hari, sisanya mancing. 🎣`,`Ngajak keluarga jalan-jalan. Udah lama nggak. 👨‍👩‍👧`])],['a',rp([`Kedengarannya damai banget. Aku jadi pengin ikut.`,`Itu rencana yang jauh lebih sehat dari rencanaku. 😅`])],['o',rp([`Ikut aja, {o}. Nanti saya ajarin cara bangun pagi.`,`Boleh. Syaratnya bawa bekal sendiri. 😂`])]];},
+ o=>{const sm=rp(OB_SMELL),sm2=rp(OB_SMELL.filter(x=>x!==sm));return [['a',`Lantainya wangi ${sm}, ya. Kamu ganti cairan pel? 👃`],['o',rp([`Iya, {o}. Yang lama habis. Cocok nggak?`,`Betul. Awalnya ${sm2}, tapi stok habis.`])],['a',rp([`Cocok banget, bikin kantor terasa segar.`,`Wangi gini jadi semangat kerja. ✨`])],['o',rp([`Nanti saya campur dikit biar nggak monoton. 😄`,`Kalau ada saran aroma lain, bilang ya, {o}.`])],['a',rp([`Coba ${rp(OB_SMELL)}, kayaknya cocok.`,`Aku sih tim ${sm2}. Hehe. 😋`])]];},
+ o=>[['o',rp(['{o}, ruangannya dingin nggak? Saya mau turunin AC sedikit.','{o}, lampu di pojok itu redup. Saya ganti nanti ya.'])],['a',rp([`Dingin banget sih, tolong dinaikin dikit.`,`Boleh, makasih sudah perhatian. 🙏`])],['o',rp([`Siap. Kalau ada yang protes, bilang sudah kesepakatan bersama. 😎`,`Oke, sekalian saya lap remote-nya. 🧽`])],['a',rp([`Kamu pemelihara kenyamanan kantor, tahu nggak? 👏`,`Hahaha 🤣 untung ada kamu.`])]],
+ o=>{const c=rp(['kopi hitam','kopi susu','teh manis','teh tawar','kopi tubruk']);return [['a',`{o}, kamu tim kopi atau tim teh? ☕🍵`],['o',`Kalau pagi ${c}, kalau sore ganti air putih. Biar tidur nyenyak. 😴`],['a',rp([`Wah, disiplin juga. Aku malah kopi sampai malam. 😵`,`Itu pola hidup sehat. Aku harus contoh. 😅`])],['o',rp([`Contoh pelan-pelan aja, {o}. Jangan langsung ekstrem. 😄`,`Mulai dari kurangi gula dulu. 🍬`])]];},
+ o=>{const hb=rp(OB_HOB);return [['o',`Kalau lagi libur, saya hobi ${hb}, {o}. Kamu?`],['a',rp([`Aku lebih sering rebahan, sih. Tapi ${hb} kayaknya seru.`,`Hobiku nonton dan ngemil. Boleh ikut ${hb}? 😂`])],['o',rp([`Boleh banget. Nanti saya ajak kalau ada waktu.`,`Wah, kapan-kapan kita coba bareng. 🤝`])],['a',rp([`Deal! Asal jangan pagi-pagi banget. 😅`,`Oke, kabari ya. Aku siapin semangat. 💪`])]];},
+ o=>{const d=rp(OB_DRM);return [['a',`{o}, cita-cita besarmu apa sih, selain bikin kantor kinclong?`],['o',`Pengin ${d}. Pelan-pelan nabung dulu. 🌱`],['a',rp([`Wah, keren! Aku dukung. Kalau butuh logo atau poster, bilang ya. 🎨`,`Aamiin, semoga cepat terwujud. 🙏`])],['o',rp([`Makasih, {o}. Kalian bikin saya semangat tiap hari. ❤️`,`Nanti kalau sudah jadi, kalian saya traktir gratis sebulan. 😄`])]];},
+ o=>{const lb=curPhase().label,w=OB_WEA[lb]||OB_WEA['FULL DAYLIGHT'];return [['o',rp(w)],['a',rp([`Iya, bener. Dari jendela kelihatan jelas.`,`Aku sampai lupa lihat keluar saking sibuk.`])],['o',rp([`Sesekali lihat jendela, {o}. Biar mata istirahat. 👀`,`Kerja memang perlu jeda lihat langit. 😌`])],['a',rp([`Betul juga. Makasih sudah ngingetin. 🙏`,`Oke, lima menit lihat langit. Janji. 🤞`])]];}
+];
+function obChunk(c){
+  const o=c.ps[0]===OB?c.ps[1]:c.ps[0],last=c.lines[c.lines.length-1],act=r=>r==='o'?OB:o;
+  for(let n=0;n<14;n++){
+    const d=rp(OBG)(o);if(!d||!d.length)continue;
+    const out=[];
+    if(last&&act(d[0][0])===last.a){const sp=act(d[0][0])===OB?o:OB;out.push({a:sp,t:v35Expr(fillT(rp(BRIDGE),act(d[0][0])))});}
+    d.forEach(([r,t])=>{const sp=act(r),ot=sp===OB?o:OB;out.push({a:sp,t:v35Expr(fillT(t,ot))});});
+    if(isSeen(out[out.length>d.length?1:0].t))continue;
+    return out;
+  }
+  return null;
+}
+const OBPA=["{g}, {o}!","Hai {o}!","Eh {o}, semangat ya! 💪","Halo {o}, lagi apa?","{o}, jangan lupa minum air ya 💧","Wah, {o}! Lama nggak papasan. 😄","{o}, ada waktu? Nanti mampir pantry ya."];
+const OBPB=["Siap, makasih! 🧹","{g}! Permisi ya, lagi lewat.","Iya, ini lagi keliling bersihin lantai.","Wah, makasih perhatiannya. 😊","Boleh, nanti saya mampir. ☕","Awas, bagian sini masih basah. ⚠️"];
+function obLines(sc,o){
+  const ord=sc.f==='o'?[OB,o]:[o,OB];
+  return {ord,L:sc.l.map((t,i)=>({a:ord[i%2],t:v35Expr(fillT(t,ord[(i+1)%2]))}))};
+}
+function startOBChat(o){
+  let L=obLines(rp(OBPASS),o).L.slice(0,2);
+  const c0={ps:[o,OB],lines:L};
+  if(!(aiChat&&GM.key)){
+    const ch=obChunk(c0);
+    if(ch&&ch.length)L=L.concat(ch);
+    else{let k=OBCHATS.filter((s,i)=>!OBUSED.has(i));if(!k.length){OBUSED.clear();k=OBCHATS;}const i=OBCHATS.indexOf(rp(k));OBUSED.add(i);L=obLines(OBCHATS[i],o).L;}
+  }
+  const c=cvMake('chat',[o,OB],L,60+Math.random()*60);
+  c.ar=areaOf(o);c.ob=true;
+}
+const OBUSED=new Set();
+function startOBPass(o){
+  let L;
+  if(Math.random()<.4)L=obLines(rp(OBPASS),o).L;
+  else{const af=Math.random()<.5,ord=af?[o,OB]:[OB,o];L=[{a:ord[0],t:v35Expr(fillT(rp(OBPA),ord[1]))},{a:ord[1],t:v35Expr(fillT(rp(OBPB),ord[0]))}];}
+  cvMake('pass',[o,OB],L,80+Math.random()*60);
+}
 function cvExitLine(a){
   if(a.pr)return null;
   if(a.busy>0||a.state==='work')return "Ada tugas masuk, aku ke meja dulu.";
@@ -2941,7 +3027,7 @@ function cvTick(c){
 }
 function banter(dt){
   BT+=dt;
-  AG.forEach(a=>{if(a.state==='idle'&&!a.pr&&!(a.busy>0)){if(a._is==null)a._is=BT;}else a._is=null;});
+  AG.concat([OB]).forEach(a=>{if((a===OB||a.state==='idle')&&!a.pr&&!(a.busy>0)){if(a._is==null)a._is=BT;}else a._is=null;});
   for(let i=CV.length-1;i>=0;i--){
     const c=CV[i];
     if(!cvTick(c)){
@@ -2971,6 +3057,14 @@ function banter(dt){
     const p=fr[i],q=fr[j];
     if(p._cv||q._cv||(COOL[pairKey(p,q)]||0)>BT)continue;
     const d=Math.hypot(p.x-q.x,p.y-q.y);
+    if(p===OB||q===OB){
+      const o=p===OB?q:p;
+      /* agen yang sedang santai dihampiri OB: berhenti dan ngobrol sungguhan (tidak sambil jalan) */
+      if(d<2.4&&o.state==='idle'&&BT-(o._is||BT)>=2&&Math.random()<.55){startOBChat(o);return;}
+      /* papasan sambil jalan: cukup saling sapa singkat */
+      if(d<1.9&&o.state==='walk'&&Math.random()<.6){startOBPass(o);return;}
+      continue;
+    }
     if(p.state==='idle'&&q.state==='idle'){
       if(BT-(p._is||BT)<2.5||BT-(q._is||BT)<2.5)continue;
       const ap=areaOf(p),aq=areaOf(q);
@@ -3113,6 +3207,7 @@ function rSer(list){let used=0;return list.slice().reverse().map(r=>{if(!r.imgs)
 function rSave(){sbSchedule();try{localStorage.setItem(RSK,JSON.stringify(rSer(results.slice(-30))));}catch(e){try{results=results.slice(-8);localStorage.setItem(RSK,JSON.stringify(rSer(results).map(r=>Object.assign({},r,{imgs:undefined}))));}catch(_){}}}
 let hist={},lastAg=null,hintedKey=false;
 const PERSONA={
+ ob:'Kamu OB (Office Boy) kantor: ramah, rendah hati, humoris, tahu gosip ringan kantor, sering membahas kebersihan, kopi, dan lantai. Suka bilang "Permisi".',
  naruto:'Kamu Naruto, Video Editor di tim konten sosmed Agent Office. Gaya: semangat, pantang menyerah, kadang menyelipkan "Dattebayo!". Keahlian: editing video pendek (Reels, TikTok, Shorts), storyboard, hook 3 detik pertama, ritme dan transisi, thumbnail, durasi dan format tiap platform.',
  yukina:'Kamu Yukina, Social Media Manager di tim konten sosmed Agent Office. Gaya: tenang, rapi, teliti. Keahlian: copywriting caption, kalender konten, jadwal posting, hashtag, nada brand, analitik engagement, strategi Instagram, TikTok, X, dan LinkedIn.',
  bananacat:'Kamu BananaCat, Content Creator di tim konten sosmed Agent Office. Gaya: jenaka, kreatif, peka tren, sesekali berkata "Nyaa~". Keahlian: ide konten, naskah video, meme, riset tren dan audio viral, hook, konsep kampanye ringan.',
