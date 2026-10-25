@@ -3911,38 +3911,57 @@ async function gemStep(a,prompt,tag,ac){
     return null;
   }finally{a.busy=Math.max(0,(a.busy||1)-1);clearInterval(bt);if(a.bubble&&a.bubble.text===tag)a.bubble=null;}
 }
-/* tugas dikerjakan bersama: rekan menyumbang, pemimpin menyusun, QA meninjau, lalu diperbaiki bila perlu */
+/* ---------- kerja tim berjenjang: konsep -> desain -> produksi -> review -> revisi sampai bagus ---------- */
+const PIPE={
+ dev:{concept:'claude',design:'nova',build:'claude',rev:['bolt','nova']},
+ konten:{concept:'bananacat',design:'naruto',build:'yukina',rev:['naruto','bananacat']}
+};
+const F_CON={claude:'struktur, fitur, alur kerja, dan risiko teknis',bananacat:'ide, angle, hook, dan pesan inti'};
+const F_DES={nova:'arah visual dan antarmuka: palet hex, font, tata letak tiap bagian, komponen, ikon, gerak, state',naruto:'arah visual dan format: gaya visual, storyboard atau tata letak, ritme, palet, tipografi, durasi atau ukuran per platform'};
+const F_REV={bolt:'fungsi, bug, aksesibilitas, kasus tepi, dan kelengkapan terhadap permintaan',nova:'daya tarik visual: apakah modern, profesional, dan menarik, atau masih terlihat biasa dan generik',naruto:'kualitas visual dan ritme: apakah menarik perhatian dalam 3 detik pertama',bananacat:'daya tarik, orisinalitas, dan kecocokan dengan tren',yukina:'kesesuaian brand, kejelasan pesan, dan konsistensi caption'};
+const parseScore=t=>{const m=String(t||'').match(/SKOR:\s*(\d+(?:[.,]\d+)?)\s*\/\s*10/i);return m?parseFloat(m[1].replace(',','.')):null;};
 async function teamRun(lead,full,ut,alt){
-  const team=teamOf(lead),helpers=team.slice(1),ac=new AbortController(),names=teamNames(team);
+  const kind=lead.team==='konten'?'konten':'dev',pl=PIPE[kind];
+  const con=byId(pl.concept),des=byId(pl.design),bld=byId(pl.build);
+  const team=teamOf(lead),names=teamNames(team),ac=new AbortController(),MAXR=3,GOAL=8;
   team.forEach(a=>{a.busy=(a.busy||0)+1;});
-  ut.st=1;ut.ow=lead.id;save();refreshTasks(Date.now());
-  const st=addMsg(lead,'','sys',Date.now(),true),acts=document.createElement('div');acts.className='acts';st.body.append(acts);
-  const stage=t=>{st.tx.textContent='Tim bekerja bersama: '+names+'. '+t;};
+  const setOw=a=>{ut.ow=a.id;save();refreshTasks(Date.now());};
+  ut.st=1;setOw(con);
+  const st=addMsg(con,'','sys',Date.now(),true),acts=document.createElement('div');acts.className='acts';st.body.append(acts);
+  const stage=(n,t)=>{st.tx.textContent=['1 Konsep','2 Desain','3 Produksi','4 Review & revisi'].map((x,i)=>(i+1<n?'✓ ':i+1===n?'▶ ':'')+x).join('  →  ')+'\n'+t;st.tx.style.whiteSpace='pre-line';};
   acts.append(mini('Hentikan tim',()=>ac.abort()));
+  const task=alt?full+'\n\nCatatan: CEO menyetujui usulan berikut, kerjakan sesuai usulan: '+alt:full;
   try{
-    const task=alt?full+'\n\nCatatan: CEO menyetujui usulan berikut, kerjakan sesuai usulan: '+alt:full;
-    stage('Tahap 1/3: rekan tim menyumbang sesuai keahlian.');
-    const notes=await Promise.all(helpers.map(h=>gemStep(h,'TIM sedang mengerjakan tugas dari CEO: "'+task+'".\nKamu '+ROLE[h.id][0]+' dalam tim ini; '+lead.name+' ('+ROLE[lead.id][0]+') yang menyusun hasil akhirnya. Tulis KONTRIBUSIMU saja (maksimal 150 kata, poin-poin) tentang '+ROLE[h.id][1]+'. Jangan menulis hasil akhir lengkap.','Kontribusi '+ROLE[h.id][0],ac)));
-    if(ac.signal.aborted){stage('Dihentikan.');return;}
-    const mem=helpers.map((h,i)=>notes[i]?'- '+h.name+' ('+ROLE[h.id][0]+'):\n'+notes[i]:'').filter(Boolean).join('\n\n');
-    stage('Tahap 2/3: '+lead.name+' menyusun hasil akhir.');
-    const meta={title:full.slice(0,120),team:names};
-    const result=await gemRun(lead,task+(mem?'\n\nMASUKAN REKAN TIM (integrasikan semuanya ke hasil akhir):\n'+mem:''),true,ut,undefined,meta);
-    if(!result||ac.signal.aborted){stage(result?'Dihentikan.':'Penyusunan hasil gagal.');return;}
-    const rv=helpers.find(h=>h.id==='bolt')||helpers[0];
-    stage('Tahap 3/3: '+rv.name+' meninjau hasil.');
-    const review=await gemStep(rv,'Tinjau hasil kerja tim untuk tugas CEO: "'+task+'".\n\nHASIL:\n'+result.slice(0,30000)+'\n\nBerikan review singkat (maksimal 120 kata): hal yang sudah baik dan masalah nyata yang harus diperbaiki (poin-poin). Akhiri dengan SATU baris persis: VERDICT: OK atau VERDICT: PERLU PERBAIKAN.','Review '+ROLE[rv.id][0],ac);
-    let dz=null;const des=helpers.find(h=>h.id==='nova');
-    if(htmlOf(result)&&des&&des!==rv&&!ac.signal.aborted){
-      stage('Tahap 3b: '+des.name+' meninjau kualitas desain.');
-      dz=await gemStep(des,'Kamu direktur desain. Kritisi halaman HTML hasil tim untuk tugas: "'+task+'".\n\nHASIL:\n'+result.slice(0,30000)+'\n\nNilai dengan standar produk modern dan profesional: sistem warna dan kontras, tipografi, ritme spasi, hierarki, komponen dan state, ikon, responsif HP, mode gelap, gerak halus, kesan template generik. Beri maksimal 8 perbaikan konkret yang paling berdampak (poin-poin, sebut nilai CSS bila perlu).','Review desain',ac);
+    stage(1,con.name+' ('+ROLE[con.id][0]+') menyusun konsep.');
+    const concept=await gemStep(con,'TIM sedang mengerjakan tugas dari CEO: "'+task+'".\nTugasmu pada tahap 1: MEMBUAT KONSEP sebagai '+ROLE[con.id][0]+'. Tulis brief konsep (maksimal 220 kata, poin-poin): tujuan dan target pengguna, struktur atau bagian utama, fitur atau isi kunci, nada dan gaya, kriteria sukses. Fokus pada '+F_CON[con.id]+'. Jangan membuat hasil akhir.','Konsep',ac);
+    if(!concept||ac.signal.aborted){stage(1,ac.signal.aborted?'Dihentikan.':'Tahap konsep gagal.');return;}
+    setOw(des);stage(2,des.name+' ('+ROLE[des.id][0]+') merancang desain dari konsep.');
+    const design=await gemStep(des,'TIM sedang mengerjakan tugas dari CEO: "'+task+'".\nKONSEP dari '+con.name+':\n'+concept+'\n\nTugasmu pada tahap 2: RANCANG DESAINNYA sebagai '+ROLE[des.id][0]+'. Tulis spesifikasi desain (maksimal 250 kata, poin-poin konkret): '+F_DES[des.id]+'. Buat modern, profesional, dan tidak terkesan template generik.','Desain',ac);
+    if(!design||ac.signal.aborted){stage(2,ac.signal.aborted?'Dihentikan.':'Tahap desain gagal.');return;}
+    setOw(bld);stage(3,bld.name+' ('+ROLE[bld.id][0]+') memproduksi hasil dari konsep dan desain.');
+    let rec=null,text=await gemRun(bld,task+'\n\nKONSEP ('+con.name+'):\n'+concept+'\n\nSPESIFIKASI DESAIN ('+des.name+'):\n'+design+'\n\nWujudkan konsep dan desain di atas menjadi hasil akhir yang lengkap dan sesuai spesifikasi.',true,null,undefined,(function(){const m={title:full.slice(0,120),team:names};return m;})());
+    if(!text||ac.signal.aborted){stage(3,text?'Dihentikan.':'Tahap produksi gagal.');return;}
+    rec=results[results.length-1];
+    let round=0,avg=null;
+    for(;;){
+      const web=!!htmlOf(text),rvs=pl.rev.map(byId).filter(a=>a&&(web||a.id!=='nova'||kind==='dev'?true:true)).filter(a=>!(kind==='dev'&&a.id==='nova'&&!web));
+      setOw(rvs[0]);stage(4,'Putaran review '+(round+1)+': '+rvs.map(a=>a.name).join(' dan ')+' menilai hasil.');
+      const out=await Promise.all(rvs.map(r=>gemStep(r,'Kamu '+ROLE[r.id][0]+' yang me-review hasil kerja tim untuk tugas CEO: "'+task+'".\n\nHASIL:\n'+text.slice(0,30000)+'\n\nNilai khusus soal '+F_REV[r.id]+'. Jadilah kritis dan jujur: kalau terkesan biasa saja, beri skor rendah. Tulis maksimal 140 kata: yang sudah baik, lalu perbaikan konkret yang paling berdampak (poin-poin). Akhiri dengan dua baris persis:\nSKOR: n/10\nVERDICT: OK atau REVISI','Review '+ROLE[r.id][0],ac)));
+      if(ac.signal.aborted){stage(4,'Dihentikan.');return;}
+      const sc=out.map(parseScore),ok=out.map((o,i)=>o&&(sc[i]!==null?sc[i]>=GOAL:/VERDICT:\s*OK/i.test(o)));
+      const got=sc.filter(x=>x!==null);avg=got.length?Math.round(got.reduce((p,q)=>p+q,0)/got.length*10)/10:null;
+      if(ok.every(Boolean)||round>=MAXR)break;
+      round++;setOw(bld);
+      stage(4,bld.name+' merevisi hasil (revisi '+round+' dari '+MAXR+')'+(avg!==null?', skor sekarang '+avg+'/10':'')+'.');
+      const notes=rvs.map((r,i)=>out[i]?'- '+r.name+' ('+ROLE[r.id][0]+') '+(sc[i]!==null?'skor '+sc[i]+'/10':'')+':\n'+out[i]:'').filter(Boolean).join('\n\n');
+      const nt=await gemRun(bld,'Ini REVISI ke-'+round+' atas hasil kerjamu sendiri berdasarkan review rekan tim. Targetnya semua skor minimal '+GOAL+'/10.\nTugas CEO: "'+task+'"\n\nHasil sebelumnya:\n'+text.slice(0,40000)+'\n\nREVIEW:\n'+notes+'\n\nTerapkan SEMUA perbaikan yang disebut, naikkan kualitas dan daya tariknya secara nyata (bukan perubahan kosmetik kecil), lalu berikan hasil lengkap yang sudah diperbarui.'+(htmlOf(text)?' Berikan SATU file HTML lengkap dalam satu blok ```html.':''),true,null,undefined,{title:'Revisi '+round+': '+full.slice(0,60),from:rec,team:names});
+      if(!nt||ac.signal.aborted){stage(4,nt?'Dihentikan.':'Revisi gagal, hasil terakhir yang valid dipakai.');break;}
+      text=nt;rec=results[results.length-1];
     }
-    if(((review&&/VERDICT:\s*PERLU PERBAIKAN/i.test(review))||dz)&&!ac.signal.aborted&&meta.rec){
-      stage('Perbaikan: '+lead.name+' memperbaiki hasil sesuai review.');
-      await gemRun(lead,'Ini PERBAIKAN atas hasil kerjamu sendiri berdasarkan review rekan tim.\nTugas CEO: "'+task+'"\n\nHasil sebelumnya:\n'+result.slice(0,40000)+'\n\nReview QA:\n'+(review||'-')+(dz?'\n\nReview desain (terapkan semua poin agar tampilan modern dan profesional):\n'+dz:'')+'\n\nPerbaiki semua masalah yang disebut lalu berikan hasil lengkap yang sudah diperbarui.'+(htmlOf(result)?' Berikan SATU file HTML lengkap dalam satu blok ```html.':''),true,null,undefined,{title:'Perbaikan setelah review: '+full.slice(0,60),from:meta.rec,team:names});
-    }
-    stage('Selesai.');
-  }finally{team.forEach(a=>{a.busy=Math.max(0,(a.busy||1)-1);});acts.remove();}
+    ut.st=2;ut.dt=Date.now();save();refreshTasks(Date.now());
+    addMsg(bld,'Review selesai'+(avg!==null?'. Skor akhir '+avg+'/10':'')+(round?' setelah '+round+' kali revisi':' tanpa perlu revisi')+'. Hasil final ada di tombol HASIL.','sys',Date.now(),true);
+    stage(5,'Selesai.');
+  }finally{team.forEach(a=>{a.busy=Math.max(0,(a.busy||1)-1);});acts.remove();if(ut.st!==2){ut.st=0;ut.ow=null;save();refreshTasks(Date.now());}}
 }
 
 
