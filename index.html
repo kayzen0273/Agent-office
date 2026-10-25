@@ -3215,10 +3215,23 @@ const PERSONA={
  nova:'Kamu DeepSeek, Desainer UI/UX di Agent Office. Gaya: visual, rapi, peka detail. Keahlian: antarmuka, warna, tipografi, layout, HTML/CSS.',
  bolt:'Kamu Doraemon, QA engineer di Agent Office. Gaya: ceria tapi teliti. Keahlian: pengujian, mencari bug, kasus uji, risiko, checklist.'
 };
+/* ---------- standar kualitas hasil ---------- */
+const WEBRE=/\b(halaman|web|website|landing|html|\bui\b|\bux\b|dashboard|aplikasi|app|form|login|antarmuka|tampilan|portofolio|profil usaha|company profile|kalkulator|template)\b/i;
+const QUAL_TXT='STANDAR KUALITAS HASIL (wajib): kerjakan seperti konsultan senior, bukan jawaban biasa. Buka dengan inti jawaban atau rekomendasi dalam 1 sampai 3 kalimat. Susun dengan heading yang jelas; pakai tabel bila membandingkan opsi. Berikan hal spesifik: contoh nyata, angka atau perkiraan, langkah konkret, dan trade-off. Hindari basa-basi dan kalimat generik yang berlaku untuk apa saja. Periksa ulang kebenaran sebelum menjawab dan jujur bila ada asumsi. Akhiri dengan 2 sampai 3 langkah berikutnya yang paling berdampak.';
+const QUAL_WEB='STANDAR DESAIN (wajib, hasil harus terlihat seperti produk profesional, bukan template generik):\n'+
+'1. Sistem desain: definisikan CSS variables untuk warna, spasi (skala 4/8px), radius, bayangan, dan transisi. Palet terbatas: satu warna aksen yang tegas, netral yang hangat atau dingin konsisten, kontras teks memenuhi WCAG AA. Dukung mode gelap lewat prefers-color-scheme.\n'+
+'2. Tipografi: muat font bagus dari Google Fonts (misalnya Plus Jakarta Sans, Manrope, Inter, atau pasangan display + sans yang berkarakter). Skala ukuran jelas, heading memakai clamp(), line-height 1.5 sampai 1.7, panjang baris nyaman.\n'+
+'3. Layout: grid atau flex, lebar maksimum 1120 sampai 1200px, ruang kosong lega, hierarki visual tegas (satu fokus utama per bagian). Mobile-first dan benar-benar responsif sampai 360px.\n'+
+'4. Komponen: tombol dengan state hover, focus-visible, active, disabled; kartu dengan border halus dan bayangan lembut; ikon SVG inline yang konsisten (JANGAN emoji sebagai ikon); gradien halus atau pola latar yang berkelas; satu elemen khas (hero kuat, ilustrasi SVG, mockup, atau pola grafis) supaya tidak terlihat seperti template.\n'+
+'5. Gerak: transisi 150 sampai 250ms, animasi masuk halus (IntersectionObserver), hormati prefers-reduced-motion.\n'+
+'6. Konten: nyata dan spesifik dalam Bahasa Indonesia yang natural, tanpa lorem ipsum, dengan data contoh realistis.\n'+
+'7. Fungsional: JavaScript yang benar-benar bekerja (validasi form, state, interaksi, dukungan keyboard); tidak boleh ada tombol atau tautan mati. HTML semantik, label dan aria yang benar, focus ring terlihat.\n'+
+'8. Hindari klise: gradien ungu-biru bawaan, deretan kartu identik tanpa variasi, bayangan tebal, teks abu-abu pucat yang sulit dibaca.\n'+
+'Hasil akhir: SATU file HTML lengkap, rapi, berkomentar singkat, dan siap dipakai.';
 function sysPrompt(a,task,prompt){
  return skPrompt(a,prompt||'')+PERSONA[a.id]+'\nKamu bekerja untuk CEO bernama Prabowo di kantor virtual berisi Einstein (Engineer), DeepSeek (Desainer), Doraemon (QA), serta tim konten sosmed: Naruto (Video Editor), Yukina (Social Media Manager), dan BananaCat (Content Creator). Waktu sekarang: '+new Date().toLocaleString('id-ID')+'.\nBalas dalam bahasa yang dipakai CEO (default Bahasa Indonesia). Gunakan Markdown.\n'+
  (task?'Ini TUGAS: kerjakan sampai tuntas dan berikan hasil lengkap. Jika diminta halaman web atau antarmuka, berikan SATU file HTML lengkap (CSS dan JS inline) dalam satu blok ```html.':'Ini obrolan: jawab singkat dan natural (1 sampai 4 kalimat) kecuali CEO meminta detail. Jika permintaannya butuh hasil panjang (kode, dokumen, desain), kerjakan secara lengkap. Jika diminta halaman web atau antarmuka, berikan SATU file HTML lengkap dalam satu blok ```html.')+
- '\nTetap dalam peran sebagai karakter kantor.';
+ (task||WEBRE.test(prompt||'')?'\n\n'+QUAL_TXT:'')+(WEBRE.test(prompt||'')?'\n\n'+QUAL_WEB:'')+'\nTetap dalam peran sebagai karakter kantor.';
 }
 /* ---------- usulan & persetujuan: agen mengajukan rencana, CEO (Anda) menyetujui atau menolak sebelum dikerjakan ---------- */
 const ALTS=['audit dulu bagian yang paling sering dipakai, supaya hasilnya tepat sasaran','buat versi ringkas dulu agar bisa ditinjau lebih cepat','tambahkan tes otomatis sekalian supaya tidak muncul regresi nanti','cek dulu apakah sudah ada komponen serupa yang bisa dipakai ulang'];
@@ -3379,6 +3392,7 @@ async function toInline(u){
   const m=/^data:(.+?);base64,(.*)$/.exec(u);if(m)return {inlineData:{mimeType:m[1],data:m[2]}};
   try{const b=await (await fetch(u)).blob();const d=await new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(b);});const mm=/^data:(.+?);base64,(.*)$/.exec(d);return mm?{inlineData:{mimeType:mm[1],data:mm[2]}}:null;}catch(e){return null;}
 }
+const IMGQ='Kualitas profesional setara studio desain: komposisi seimbang dengan hierarki visual jelas, pencahayaan sinematik, palet warna harmonis dan modern, detail tajam, tipografi rapi dengan ejaan teks persis bila ada teks, tanpa watermark dan tanpa artefak. Permintaan: ';
 async function gImage(a,prompt,signal,refs,opts){
   opts=opts||{};let lastErr=null;
   const refParts=(await Promise.all((refs||[]).slice(0,3).map(toInline))).filter(Boolean);
@@ -3387,7 +3401,7 @@ async function gImage(a,prompt,signal,refs,opts){
   const models=imgOK&&all.includes(imgOK)?[imgOK].concat(all.filter(x=>x!==imgOK)):all;
   for(const model of models){
     let res;
-    try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify({contents:[{role:'user',parts:[{text:skPrompt(a,prompt,true)+prompt}].concat(refParts)}],generationConfig:Object.assign({responseModalities:['TEXT','IMAGE']},opts.ratio&&!opts.noRatio?{imageConfig:{aspectRatio:opts.ratio}}:{})})});}
+    try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify({contents:[{role:'user',parts:[{text:skPrompt(a,prompt,true)+IMGQ+prompt}].concat(refParts)}],generationConfig:Object.assign({responseModalities:['TEXT','IMAGE']},opts.ratio&&!opts.noRatio?{imageConfig:{aspectRatio:opts.ratio}}:{})})});}
     catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error(NETERR);er.net=1;throw er;}
     if(!res.ok){const er=new Error(await gErr(res));er.code=res.status;const gl=gErr0.last||{};
       if(res.status===429&&!gl.zero&&gl.delay&&gl.delay<=20&&!opts.waited){await new Promise(r=>setTimeout(r,gl.delay*1000+300));return gImage(a,prompt,signal,refs,Object.assign({},opts,{waited:1}));}
@@ -3759,7 +3773,7 @@ async function gErr0(res){
 const NETERR='Tidak bisa menghubungi Google. Periksa koneksi internet, VPN, atau ekstensi pemblokir.';
 async function gStream1(a,prompt,task,signal,onText,model){
  const h=hist[a.id]=hist[a.id]||[];
- const body={systemInstruction:{parts:[{text:sysPrompt(a,task,prompt)}]},contents:h.concat([{role:'user',parts:[{text:prompt}]}]),generationConfig:{temperature:task?.7:.9,maxOutputTokens:task?16384:8192}};
+ const body={systemInstruction:{parts:[{text:sysPrompt(a,task,prompt)}]},contents:h.concat([{role:'user',parts:[{text:prompt}]}]),generationConfig:{temperature:task?.7:.9,maxOutputTokens:task?32768:8192}};
  let res;
  try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':streamGenerateContent?alt=sse',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify(body)});}
  catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error(NETERR+(e&&e.message?' ('+e.message+')':''));er.net=1;throw er;}
@@ -3799,7 +3813,7 @@ async function gStream1(a,prompt,task,signal,onText,model){
 }
 async function gOnce(a,prompt,task,signal,model){
  const h=hist[a.id]=hist[a.id]||[];
- const body={systemInstruction:{parts:[{text:sysPrompt(a,task,prompt)}]},contents:h.concat([{role:'user',parts:[{text:prompt}]}]),generationConfig:{temperature:task?.7:.9,maxOutputTokens:task?16384:8192}};
+ const body={systemInstruction:{parts:[{text:sysPrompt(a,task,prompt)}]},contents:h.concat([{role:'user',parts:[{text:prompt}]}]),generationConfig:{temperature:task?.7:.9,maxOutputTokens:task?32768:8192}};
  let res;
  try{res=await fetch(GAPI+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':GM.key},body:JSON.stringify(body)});}
  catch(e){if(e&&e.name==='AbortError')throw e;const er=new Error(NETERR);er.net=1;throw er;}
@@ -3918,9 +3932,14 @@ async function teamRun(lead,full,ut,alt){
     const rv=helpers.find(h=>h.id==='bolt')||helpers[0];
     stage('Tahap 3/3: '+rv.name+' meninjau hasil.');
     const review=await gemStep(rv,'Tinjau hasil kerja tim untuk tugas CEO: "'+task+'".\n\nHASIL:\n'+result.slice(0,30000)+'\n\nBerikan review singkat (maksimal 120 kata): hal yang sudah baik dan masalah nyata yang harus diperbaiki (poin-poin). Akhiri dengan SATU baris persis: VERDICT: OK atau VERDICT: PERLU PERBAIKAN.','Review '+ROLE[rv.id][0],ac);
-    if(review&&/VERDICT:\s*PERLU PERBAIKAN/i.test(review)&&!ac.signal.aborted&&meta.rec){
+    let dz=null;const des=helpers.find(h=>h.id==='nova');
+    if(htmlOf(result)&&des&&des!==rv&&!ac.signal.aborted){
+      stage('Tahap 3b: '+des.name+' meninjau kualitas desain.');
+      dz=await gemStep(des,'Kamu direktur desain. Kritisi halaman HTML hasil tim untuk tugas: "'+task+'".\n\nHASIL:\n'+result.slice(0,30000)+'\n\nNilai dengan standar produk modern dan profesional: sistem warna dan kontras, tipografi, ritme spasi, hierarki, komponen dan state, ikon, responsif HP, mode gelap, gerak halus, kesan template generik. Beri maksimal 8 perbaikan konkret yang paling berdampak (poin-poin, sebut nilai CSS bila perlu).','Review desain',ac);
+    }
+    if(((review&&/VERDICT:\s*PERLU PERBAIKAN/i.test(review))||dz)&&!ac.signal.aborted&&meta.rec){
       stage('Perbaikan: '+lead.name+' memperbaiki hasil sesuai review.');
-      await gemRun(lead,'Ini PERBAIKAN atas hasil kerjamu sendiri berdasarkan review rekan tim.\nTugas CEO: "'+task+'"\n\nHasil sebelumnya:\n'+result.slice(0,40000)+'\n\nReview:\n'+review+'\n\nPerbaiki semua masalah yang disebut lalu berikan hasil lengkap yang sudah diperbarui.'+(htmlOf(result)?' Berikan SATU file HTML lengkap dalam satu blok ```html.':''),true,null,undefined,{title:'Perbaikan setelah review: '+full.slice(0,60),from:meta.rec,team:names});
+      await gemRun(lead,'Ini PERBAIKAN atas hasil kerjamu sendiri berdasarkan review rekan tim.\nTugas CEO: "'+task+'"\n\nHasil sebelumnya:\n'+result.slice(0,40000)+'\n\nReview QA:\n'+(review||'-')+(dz?'\n\nReview desain (terapkan semua poin agar tampilan modern dan profesional):\n'+dz:'')+'\n\nPerbaiki semua masalah yang disebut lalu berikan hasil lengkap yang sudah diperbarui.'+(htmlOf(result)?' Berikan SATU file HTML lengkap dalam satu blok ```html.':''),true,null,undefined,{title:'Perbaikan setelah review: '+full.slice(0,60),from:meta.rec,team:names});
     }
     stage('Selesai.');
   }finally{team.forEach(a=>{a.busy=Math.max(0,(a.busy||1)-1);});acts.remove();}
