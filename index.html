@@ -248,7 +248,7 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
    <span class="brand">Agent Office</span>
    <button class="chip" id="adzanbtn" type="button" title="Pilih file audio adzan dari perangkat">ADZAN</button><input type="file" id="adzanfile" accept="audio/*" hidden><button class="chip" id="sholat" type="button" title="Demo waktu sholat">SHOLAT</button>
    <button class="chip" id="mpbtn" type="button" title="Mode tamu: masuk kantor bersama pengguna lain"><i id="mpdot" style="background:#5c6272"></i>TAMU</button>
-   <button class="chip" id="mode" type="button" aria-label="Mode waktu">AUTO</button>
+   <button class="chip" id="evbtn" type="button" title="Picu kejadian acak: pizza datang, listrik padam, atau tamu penting">KEJADIAN</button><button class="chip" id="mode" type="button" aria-label="Mode waktu">AUTO</button>
    <span class="chip"><i id="pdot"></i><span id="plabel">DAWN</span></span>
   </header>
   <main class="main">
@@ -698,6 +698,7 @@ function drawWalls(ph,t){
 
 /* ---------- gambar: perabot ---------- */
 function monitor(x,y,z,w,hh,seed,work,t,flip){
+  if(EVT&&EVT.dark())work=false;
   bx(x+w/2-.05,y+.1,z,.1,.1,4,'#2b303b');
   bx(x,y,z+4,w,.08,hh,'#191d26');
   if(flip){
@@ -2398,7 +2399,7 @@ function drawRoom(t){
   const ph=curPhase();
   drawFloor(ph);plazaFloor();
   drawWalls(ph,t);
-  const list=items.concat(AG.map(a=>({k:a.x+a.y+.02+(a.state==='work'?(a.zo||0):0),f:()=>drawAgent(a,t)}))).concat([{k:OB.x+OB.y+.02,f:()=>drawAgent(OB,t)}]).concat(MPo?MPo.items():[]);
+  const list=items.concat(AG.map(a=>({k:a.x+a.y+.02+(a.state==='work'?(a.zo||0):0),f:()=>drawAgent(a,t)}))).concat([{k:OB.x+OB.y+.02,f:()=>drawAgent(OB,t)}]).concat(MPo?MPo.items():[]).concat(EVT?EVT.items():[]);
   list.sort((p,q)=>p.k-q.k).forEach(it=>it.f(t));
   if(ph.over!=='rgba(0,0,0,0)'){
     const tl=P(0,0,WH),br=P(N,N,-14),l=P(0,N),r=P(N,0);
@@ -2412,6 +2413,7 @@ function drawRoom(t){
     glows.forEach(g=>{const rg=ctx.createRadialGradient(g[0],g[1],0,g[0],g[1],g[2]);rg.addColorStop(0,g[3]+k+')');rg.addColorStop(1,g[3]+'0)');ctx.fillStyle=rg;ctx.fillRect(g[0]-g[2],g[1]-g[2],g[2]*2,g[2]*2);});
     ctx.restore();
   }
+  if(EVT)EVT.over();
   overlayTags();drawLabels();
 }
 
@@ -4484,12 +4486,13 @@ $('#form').addEventListener('submit',e=>{
   inp.value='';
   addMsg(boss,txt,'',Date.now(),true);beep();
   if(MPo&&!/^[\/@]/.test(txt))MPo.say(txt);
-  if(/^\/help$/i.test(txt)){addMsg(boss,'Perintah:\n/skill membuka pengelola skill (unggah SKILL.md atau zip)\n/gambar <deskripsi> membuat gambar atau foto (butuh Gemini)\n/tugas <perintah> memberi tugas ke seluruh tim (Einstein, DeepSeek, Doraemon bekerja bersama). Agen mengajukan rencana (dan usulan yang lebih berguna bila ada), dikerjakan setelah Anda setujui; hasilnya muncul di chat dan tombol HASIL\n@Einstein, @DeepSeek, @Doraemon bicara langsung\nPERINTAH LANGSUNG (bukan tugas), bisa ke ruang CEO, kerja, rapat, tamu, santai, bermain, studio, plaza, sosmed, marketing, masjid, server, pantry, lorong: contoh "@Naruto ngopi dulu", "Yukina diam di ruang santai 10 menit", "semua ke ruang rapat", "@BananaCat joget 30 detik", "semua kumpul di ruang bermain sampai aku bilang", "bubar" untuk membatalkan\n/gemini pengaturan API key\n/hasil riwayat hasil\n/reset hapus ingatan percakapan agen\n/obrolan on|off obrolan antar-agen ditulis Gemini (panjang dan selalu baru)\n/status papan tugas\n/adzan reset hapus file adzan\nPesan biasa hanya obrolan atau perintah langsung. Pekerjaan wajib lewat /tugas atau /gambar.\nShift+Enter untuk baris baru.','hint');return;}
+  if(/^\/help$/i.test(txt)){addMsg(boss,'Perintah:\n/skill membuka pengelola skill (unggah SKILL.md atau zip)\n/gambar <deskripsi> membuat gambar atau foto (butuh Gemini)\n/tugas <perintah> memberi tugas ke seluruh tim (Einstein, DeepSeek, Doraemon bekerja bersama). Agen mengajukan rencana (dan usulan yang lebih berguna bila ada), dikerjakan setelah Anda setujui; hasilnya muncul di chat dan tombol HASIL\n@Einstein, @DeepSeek, @Doraemon bicara langsung\nPERINTAH LANGSUNG (bukan tugas), bisa ke ruang CEO, kerja, rapat, tamu, santai, bermain, studio, plaza, sosmed, marketing, masjid, server, pantry, lorong: contoh "@Naruto ngopi dulu", "Yukina diam di ruang santai 10 menit", "semua ke ruang rapat", "@BananaCat joget 30 detik", "semua kumpul di ruang bermain sampai aku bilang", "bubar" untuk membatalkan\n/gemini pengaturan API key\n/hasil riwayat hasil\n/kejadian pizza|listrik|tamu|acak|on|off kejadian acak di kantor (muncul sendiri setiap beberapa menit)\n/reset hapus ingatan percakapan agen\n/obrolan on|off obrolan antar-agen ditulis Gemini (panjang dan selalu baru)\n/status papan tugas\n/adzan reset hapus file adzan\nPesan biasa hanya obrolan atau perintah langsung. Pekerjaan wajib lewat /tugas atau /gambar.\nShift+Enter untuk baris baru.','hint');return;}
   if(/^\/gemini$/i.test(txt)){openSet();return;}
   if(/^\/hasil$/i.test(txt)){openList();return;}
   if(/^\/supabase$/i.test(txt)){sbOpen();return;}
   if(/^\/skills?$/i.test(txt)){openSkills();return;}
   {const mo=txt.match(/^\/obrolan(?:\s+(on|off))?$/i);if(mo){if(mo[1])aiChat=mo[1].toLowerCase()==='on';else aiChat=!aiChat;try{localStorage.setItem(AICK,aiChat?'1':'0');}catch(e){}addMsg(boss,'Obrolan AI antar-agen: '+(aiChat?'ON. Dialog ditulis Gemini, panjang dan selalu baru (butuh Gemini terhubung).':'OFF. Memakai dialog bawaan yang disusun dari skrip dan topik papan tugas.'),'sys');return;}}
+  {const mk=txt.match(/^\/(?:kejadian|event)(?:\s+(\S+))?$/i);if(mk){EVT.cmd(mk[1]);return;}}
   if(/^\/reset$/i.test(txt)){hist={};addMsg(boss,'Ingatan percakapan agen dihapus.','sys');return;}
   if(/^\/adzan\s+reset$/i.test(txt)){useAdhanBlob(null);try{IDB.set(null);}catch(_){}addMsg(boss,'File adzan dihapus, kembali ke suara bawaan.','sys');return;}
   if(/^\/status$/i.test(txt)){const c=counts();addMsg(boss,`TODO ${c[0]} · DOING ${c[1]} · DONE ${c[2]}`,'sys');return;}
@@ -4648,6 +4651,274 @@ setInterval(()=>{
 },1000);
 let di=0;$('#sholat').addEventListener('click',()=>{const q=PT[di++%PT.length];demo={t0:Date.now(),name:q[0],rk:q[3]};});
 
+
+/* ---------- KEJADIAN ACAK: pizza datang, listrik padam, tamu penting ---------- */
+var EVT=(()=>{
+const KEY='agentOffice.events.v1';
+let auto=true;try{auto=localStorage.getItem(KEY)!=='0';}catch(e){}
+let clk=0,next=80+Math.random()*100,cur=null,last='',boxesOn=false;
+const rr=a=>a[Math.floor(Math.random()*a.length)];
+const shuf=a=>a.slice().sort(()=>Math.random()-.5);
+const mkNpc=(id,name,role,color,hair,skin,shirt,ph)=>({id,name,role,guest:true,color,hair,skin,shirt,ph,g:'m',x:8.85,y:-.4,state:'idle',act:role,loc:'work',on:false,box:false,w:null,fin:null,bubble:null});
+const K=mkNpc('kurir','Kurir','Kurir Pizza','#ff7a3d','#1b1b1f','#e0ac86','#e8453a',2.1);
+const V=mkNpc('vip','Tamu','Tamu Penting','#c9a227','#e6e6ea','#f2c9a0','#222633',4.3);
+function mkAv(n){
+  const c=document.createElement('canvas');c.width=c.height=32;const x=c.getContext('2d');
+  x.fillStyle='#2a3d52';x.fillRect(0,0,32,32);x.fillStyle=n.shirt;x.fillRect(6,22,20,10);
+  x.fillStyle=n.color;x.fillRect(6,22,20,3);
+  x.fillStyle=n.skin;x.fillRect(9,8,14,14);x.fillStyle=n.hair;x.fillRect(8,5,16,6);
+  x.fillStyle='#1a1b22';x.fillRect(12,15,2,2);x.fillRect(19,15,2,2);
+  return c.toDataURL();
+}
+AV.kurir=mkAv(K);AV.vip=mkAv(V);
+
+/* ---- UI: banner ---- */
+{const st=document.createElement('style');st.textContent='.evb{position:absolute;left:50%;top:44px;transform:translateX(-50%);z-index:4;pointer-events:none;text-align:center;padding:8px 16px;border-radius:10px;background:rgba(14,15,20,.92);border:1px solid #4a5066;box-shadow:0 8px 28px rgba(0,0,0,.5);max-width:88%}.evb b{display:block;font-family:var(--pixel);font-size:12px;letter-spacing:.18em;color:#ffd25e}.evb span{display:block;font-size:12px;color:#c4c9d8;margin-top:3px}.evb.go{animation:evb 4.4s ease both}@keyframes evb{0%{opacity:0;transform:translate(-50%,-14px)}8%,86%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,-8px)}}@media (prefers-reduced-motion:reduce){.evb.go{animation:none}}@media (max-width:820px){.evb{top:36px}}';document.head.append(st);}
+const bn=document.createElement('div');bn.className='evb';bn.hidden=true;bn.setAttribute('role','status');stage.append(bn);
+let bnT=0;
+function banner(t,s){
+  const b=document.createElement('b'),p=document.createElement('span');b.textContent=t;p.textContent=s||'';
+  bn.replaceChildren(b,p);bn.hidden=false;bn.classList.remove('go');void bn.offsetWidth;bn.classList.add('go');
+  clearTimeout(bnT);bnT=setTimeout(()=>{bn.hidden=true;},4500);
+}
+function tone(seq){
+  if(muted||vol<=0||!touched)return;
+  try{
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    if(AC.state==='suspended')AC.resume();
+    const o=AC.createOscillator(),g=AC.createGain(),n=AC.currentTime,L=seq.length*.16;
+    o.type='triangle';seq.forEach((f,i)=>o.frequency.setValueAtTime(f,n+i*.16));
+    g.gain.setValueAtTime(.06*vol,n);g.gain.exponentialRampToValueAtTime(.0001,n+L+.1);
+    o.connect(g);g.connect(AC.destination);o.start(n);o.stop(n+L+.15);
+  }catch(e){}
+}
+
+/* ---- util ---- */
+const esay=(a,t,ttl)=>{addMsg(a,t,'',Date.now(),false);a.bubble={text:t.length>34?t.slice(0,32)+'…':t,ttl:ttl||4};};
+const sysm=(a,t)=>addMsg(a,t,'sys',Date.now(),false);
+const free=a=>!a.pr&&!a._cmd&&!(a.busy>0);
+const crew=()=>AG.filter(free);
+function give(a,d,o){
+  if(a._cv)a._cv=null;
+  const m={ph:'go',px:a.x,py:a.y,d,dur:o.dur==null?null:o.dur,act:o.act||'',say:o.say||null,arr:o.arr||null,t0:Date.now(),until:0,done:o.done||null,ev:o.ev};
+  a._cmd=m;return m;
+}
+function go(n,pts,fin){n.w=cmdWalk(pts,Date.now());n.fin=fin||null;n.state='walk';}
+function stepNpc(n){
+  if(!n.w)return;
+  const now=Date.now();walkPos(n.w,now,n);
+  if(now>=n.w.t1){const f=n.fin;n.w=null;n.fin=null;n.state='idle';if(f)f();}
+}
+const npcBub=(n,dt)=>{if(n.bubble){n.bubble.ttl-=dt;if(n.bubble.ttl<=0)n.bubble=null;}};
+function end(){cur=null;boxesOn=false;next=clk+160+Math.random()*200;}
+function abort(){
+  const c=cur;
+  (c.ps||[]).forEach(p=>{const m=p.a._cmd;if(m&&m.ev===c){m.ph='ret';m.w=null;m.rq=null;}});
+  K.on=false;V.on=false;K.w=V.w=null;
+  sysm(boss,'Kejadian dibatalkan karena waktu sholat tiba.');
+  end();
+}
+
+/* ---- 1. PIZZA ---- */
+const EAT=['Mmm, keju melar! 🧀','Satu slice lagi ya. 🍕','Pizza ini habis lebih cepat dari tenggat. 😂','Siapa yang pilih topping nanas? 🍍','Makasih traktirannya, Bos! 🙏','Rapat tanpa agenda, tapi ada pizza. Mantap.','Awas, saus jatuh ke keyboard! 😱'];
+const BOSSEAT=['Silakan, ambil sepuasnya. Hari ini traktiran saya. 🍕','Kerja keras kalian pantas dihargai. 👏','Sisakan satu slice buat OB ya. 😄'];
+function pizza(){
+  const gs=crew();if(!gs.length)return false;
+  const c=cur={type:'pizza',t:0,stage:'arrive',ps:[],pend:0,at:0};
+  K.on=true;K.x=8.85;K.y=-.4;K.box=true;K.bubble=null;
+  banner('🍕 PIZZA DATANG!','Kurir sudah di depan pintu kantor.');
+  tone([660,880,990]);
+  sysm(K,'Pesanan pizza tiba di pintu kantor.');
+  go(K,[[8.85,-.4],NODES.door],()=>{
+    if(cur!==c)return;
+    K.box=false;c.stage='door';c.at=c.t;
+    esay(K,'Paket pizza! Atas nama Bos. 🍕',4);
+    const g2=crew();c.pend=g2.length;
+    const bs=byId('boss');
+    esay(free(bs)?bs:(g2[0]||bs),'Pizzanya sudah datang! Silakan ambil, hari ini traktiran. 🍕',4.5);
+    g2.forEach((a,i)=>setTimeout(()=>{
+      c.pend--;
+      if(cur!==c||!free(a))return;
+      const off=[((i%3)-1)*.4,.1+Math.floor(i/3)*.35];
+      give(a,{node:'door',label:'pintu depan',off},{dur:3500,act:'Menerima pizza',arr:rr(['Pizza! 🍕','Baunya enak banget!','Aku duluan!']),ev:c});
+      c.ps.push({a,st:'door'});
+    },i*500));
+  });
+  return true;
+}
+function updPizza(now){
+  const c=cur;
+  c.ps.forEach(p=>{
+    const a=p.a,m=a._cmd;
+    if(p.st==='door'){
+      if(!m||m.ev!==c){p.st='gone';return;}
+      if(m.ph==='hold'&&now-m.t0>3200){
+        const n=give(a,{meet:1,label:'ruang rapat'},{dur:42000+Math.random()*16000,act:'Makan pizza bareng',say:a.human?BOSSEAT:EAT,arr:'Hmm, enak! 😋',done:'Kenyang! Balik kerja. 🍕',ev:c});
+        n.px=a.x;n.py=a.y;p.st='eat';boxesOn=true;
+      }
+    }else if(p.st==='eat'){if(!m||m.ev!==c)p.st='gone';}
+  });
+  if(c.stage==='door'&&(c.ps.some(p=>p.st==='eat')||c.t-c.at>22)){
+    c.stage='leave';
+    esay(K,'Selamat menikmati! Bintang lima ya. ⭐',4);
+    go(K,[[K.x,K.y],[8.85,-.5]],()=>{K.on=false;});
+  }
+  if(c.stage==='leave'&&!K.on&&c.pend<=0&&c.ps.every(p=>p.st==='gone')){sysm(boss,'Pizza habis tak bersisa. Semua kembali ke aktivitas.');end();}
+  else if(c.t>260){K.on=false;end();}
+}
+
+/* ---- 2. LISTRIK PADAM ---- */
+const DARK=['Lho, kok gelap?! 😱','Senter ponsel nyala. 🔦','Tenang, UPS server masih hidup. 🖥️','Siapa yang mencabut kabelnya? 😅','Gelap-gelapan begini jadi romantis ya. 🕯️','Filenya sudah di-save, kan? 😰'];
+function blackout(){
+  const c=cur={type:'blackout',t:0,dur:20+Math.random()*8,ps:[],lit:false};
+  banner('⚡ LISTRIK PADAM','Lampu dan monitor mati. Senter ponsel dinyalakan.');
+  tone([420,300,200]);
+  sysm(boss,'Listrik padam! Lampu dan monitor mati, hanya UPS ruang server yang menyala.');
+  const all=AG.filter(a=>!a.pr&&!a._cmd),gs=all.filter(a=>!(a.busy>0));
+  all.filter(a=>a.busy>0).forEach(a=>{a.bubble={text:'Laptop pakai baterai, lanjut kerja. 🔋',ttl:5};});
+  gs.forEach((a,i)=>setTimeout(()=>{
+    if(cur!==c||!free(a))return;
+    const ang=i/gs.length*Math.PI*2,off=[Math.cos(ang)*1.0,Math.sin(ang)*.75];
+    give(a,{node:'a',label:'ruang kerja',off},{dur:null,act:'Menyalakan senter ponsel',say:DARK,arr:'Mati lampu?!',done:'Lampu menyala lagi! 🎉',ev:c});
+    c.ps.push({a});
+  },i*220));
+  OB.bubble={text:'Saya cek panel listrik dulu!',ttl:5};
+  return true;
+}
+function updBlack(){
+  const c=cur;
+  if(!c.lit&&c.t>=c.dur){
+    c.lit=true;
+    tone([300,440,660,880]);
+    sysm(boss,'Listrik menyala kembali. Semua sistem normal.');
+    OB.bubble={text:'Sudah nyala! Panelnya cuma ngambek. 🔌',ttl:5};
+    const now=Date.now();
+    c.ps.forEach(p=>{const m=p.a._cmd;if(!m||m.ev!==c)return;
+      if(m.ph==='go')m.dur=1500+Math.random()*2000;
+      else if(m.ph==='hold')m.until=Math.min(m.until,now+1200+Math.random()*2500);});
+  }
+  if(c.t>=c.dur+1.4)end();
+}
+function lvl(){
+  if(!cur||cur.type!=='blackout')return 0;
+  const t=cur.t,D=cur.dur;
+  return t<1?((Math.floor(t*16)%2)?.92:.3):t<D?1:Math.max(0,1-(t-D)/1.2);
+}
+const dk=document.createElement('canvas');
+function over(){
+  const L=lvl();if(L<=.01)return;
+  const W=Math.round(CW*DPR),H=Math.round(CH*DPR);
+  if(dk.width!==W||dk.height!==H){dk.width=W;dk.height=H;}
+  const d=dk.getContext('2d');
+  d.setTransform(DPR,0,0,DPR,0,0);d.globalCompositeOperation='source-over';d.clearRect(0,0,CW,CH);
+  d.fillStyle='rgba(3,5,18,.82)';d.fillRect(0,0,CW,CH);
+  d.globalCompositeOperation='destination-out';
+  const hole=(x,y,r,a)=>{d.save();d.translate(x,y);d.scale(1,.72);const g=d.createRadialGradient(0,0,0,0,0,r);g.addColorStop(0,'rgba(0,0,0,'+a+')');g.addColorStop(1,'rgba(0,0,0,0)');d.fillStyle=g;d.beginPath();d.arc(0,0,r,0,7);d.fill();d.restore();};
+  OVA().forEach(a=>{if(a._sx!==undefined)hole(a._sx,a._sy+9*AQ(),Math.max(46,140*S),.92);});
+  const e=P(NODES.door[0],NODES.door[1],40);hole(e[0],e[1],Math.max(40,90*S),.5);
+  const u=P(27,33,30);hole(u[0],u[1],Math.max(34,70*S),.55);
+  ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=L;ctx.drawImage(dk,0,0);ctx.restore();
+}
+
+/* ---- 3. TAMU PENTING ---- */
+const VIPS=[['Pak Hendra','Investor','#c9a227'],['Bu Maya','Klien Besar','#d65a7a'],['Mr. Tanaka','Mitra dari Jepang','#6a8bd6'],['Bu Ratna','Pejabat Dinas','#5aa07a']];
+const VL=['Kantor yang hidup sekali.','Saya tertarik dengan kerja sama ini.','Tim Anda solid.','Boleh lihat demo produknya?','Tehnya enak.'];
+const BL2=['Terima kasih sudah berkunjung. Mari kita bahas kerja samanya. 🤝','Silakan duduk, jangan sungkan.','Tim kami siap presentasi kapan saja.'];
+function vip(){
+  const [nm,rl,col]=rr(VIPS);
+  Object.assign(V,{name:nm,role:rl,color:col,on:true,x:8.85,y:-.4,bubble:null,w:null});
+  AV.vip=mkAv(V);
+  const c=cur={type:'vip',t:0,stage:'in',ps:[],at:0,lastSay:0};
+  banner('🤵 TAMU PENTING',nm+' ('+rl+') tiba di kantor');
+  tone([523,659,784]);
+  sysm(V,nm+' ('+rl+') datang berkunjung dan diantar ke ruang CEO.');
+  const bs=byId('boss');
+  if(free(bs)){give(bs,{node:'C4',label:'ruang CEO'},{dur:46000,act:'Menjamu tamu penting',say:BL2,arr:'Selamat datang, '+nm+'!',done:'Terima kasih sudah mampir. 🤝',ev:c});c.ps.push({a:bs});}
+  shuf(AIS.filter(free)).slice(0,2).forEach((a,i)=>{
+    give(a,{node:'ci',label:'pintu ruang CEO',off:[i*.5,.3]},{dur:22000,act:'Menyambut tamu',arr:'Selamat datang! 👋',done:'Tamu sudah masuk, lanjut kerja.',ev:c});c.ps.push({a});
+  });
+  shuf(AG.filter(a=>!a.pr&&!a._cmd&&!(a.busy>0))).slice(0,3).forEach((a,i)=>{if(!a.bubble)a.bubble={text:rr(['Ssst, ada tamu penting!','Itu tamunya Bos ya?','Rapikan meja dulu! 😅']),ttl:4.5};});
+  go(V,[[8.85,-.4],NODES.door].concat(route('door','C3').map(k=>NODES[k])),()=>{
+    if(cur!==c)return;
+    c.stage='meet';c.at=c.t;V.bubble={text:'Terima kasih sudah menerima saya.',ttl:4};
+  });
+  return true;
+}
+function updVip(){
+  const c=cur;
+  if(c.stage==='meet'){
+    if(c.t-c.lastSay>7){c.lastSay=c.t;V.bubble={text:rr(VL),ttl:4};}
+    if(c.t-c.at>42){
+      c.stage='out';esay(V,'Terima kasih atas jamuannya. Sampai jumpa!',4);
+      go(V,[[V.x,V.y],NODES.C3].concat(route('C3','door').map(k=>NODES[k]),[[8.85,-.5]]),()=>{V.on=false;c.stage='done';});
+    }
+  }
+  if(c.stage==='done'){sysm(boss,'Tamu penting sudah pulang. Kantor kembali normal.');end();}
+  else if(c.t>220){V.on=false;end();}
+}
+
+/* ---- gambar ---- */
+function carry(k){
+  bx(k.x-.25,k.y-.15,9,.5,.5,2.6,'#d9a65a');bx(k.x-.25,k.y-.15,11.6,.5,.5,2.6,'#c98a3a');
+}
+function pizzaDisc(x,y,z,r,dots){
+  const c=P(x,y,z),rx=32*Math.SQRT2*S*r,ry=16*Math.SQRT2*S*r;
+  ctx.fillStyle='#e8b347';ctx.beginPath();ctx.ellipse(c[0],c[1],rx,ry,0,0,7);ctx.fill();
+  ctx.fillStyle='#f4d27a';ctx.beginPath();ctx.ellipse(c[0],c[1],rx*.82,ry*.82,0,0,7);ctx.fill();
+  ctx.fillStyle='#c8372d';
+  dots.forEach(([dx,dy])=>{ctx.beginPath();ctx.ellipse(c[0]+dx*rx,c[1]+dy*ry,rx*.14,ry*.14,0,0,7);ctx.fill();});
+}
+function doorStack(){
+  bx(8.1,1.7,0,.7,.7,3,'#d9a65a');bx(8.1,1.7,3,.7,.7,3,'#c98a3a');bx(8.1,1.7,6,.7,.7,3,'#d9a65a');
+}
+function tableBoxes(){
+  bx(4.0,14.45,25,.9,.9,1.3,'#d9a65a');pizzaDisc(4.45,14.9,26.5,.34,[[-.3,0],[.3,-.1],[0,.4],[.1,-.4]]);
+  bx(5.75,14.4,25,.9,.9,1.3,'#c98a3a');pizzaDisc(6.2,14.85,26.5,.34,[[.35,.1],[-.25,.2],[0,-.4]]);
+}
+function items(){
+  const o=[];
+  if(K.on)o.push({k:K.x+K.y+.02,f:t=>{drawAgent(K,t);if(K.box)carry(K);}});
+  if(V.on)o.push({k:V.x+V.y+.02,f:t=>drawAgent(V,t)});
+  if(cur&&cur.type==='pizza'&&cur.stage==='door')o.push({k:10.5,f:doorStack});
+  if(boxesOn)o.push({k:20.3,f:tableBoxes});
+  return o;
+}
+
+/* ---- kendali ---- */
+function fire(type){
+  if(cur)return false;
+  const pool=type?[type]:['pizza','pizza','listrik','listrik','tamu','tamu'].filter(x=>x!==last);
+  const t=rr(pool);
+  const ok=t==='pizza'?pizza():t==='listrik'?blackout():vip();
+  if(ok)last=t;
+  return ok;
+}
+function tick(dt){
+  clk+=dt;
+  stepNpc(K);stepNpc(V);
+  npcBub(K,dt);npcBub(V,dt);
+  if(cur){
+    cur.t+=dt;
+    const now=Date.now();
+    if(cur.type!=='blackout'&&prayerAt(now)){abort();return;}
+    if(cur.type==='pizza')updPizza(now);else if(cur.type==='blackout')updBlack();else updVip();
+  }else if(auto&&clk>=next&&!document.hidden&&!prayerAt(Date.now())){
+    if(!fire())next=clk+30;
+  }
+}
+function cmd(arg){
+  const a=String(arg||'').toLowerCase();
+  const save=()=>{try{localStorage.setItem(KEY,auto?'1':'0');}catch(e){}};
+  if(a==='on'||a==='off'){auto=a==='on';save();sysm(boss,'Kejadian acak otomatis: '+(auto?'ON. Muncul sendiri setiap beberapa menit.':'OFF. Hanya muncul bila dipicu manual.'));return;}
+  if(a==='status'){sysm(boss,'Kejadian acak: '+(auto?'ON':'OFF')+(cur?'. Sedang berlangsung: '+cur.type:'. Tidak ada kejadian berlangsung')+'.');return;}
+  const map={pizza:'pizza',makan:'pizza',listrik:'listrik',mati:'listrik',padam:'listrik',blackout:'listrik',tamu:'tamu',vip:'tamu',acak:'',random:'',x:''};
+  if(a&&!(a in map)){sysm(boss,'Pilihan: /kejadian pizza | listrik | tamu | acak | on | off | status');return;}
+  if(cur){sysm(boss,'Masih ada kejadian yang berlangsung. Tunggu sampai selesai.');return;}
+  if(!fire(map[a]||undefined))sysm(boss,'Kejadian belum bisa dimulai sekarang (agen sedang sibuk atau waktu sholat).');
+}
+$('#evbtn').addEventListener('click',()=>cmd(''));
+return {tick,items,over,cmd,npcs:()=>[K,V].filter(n=>n.on),dark:()=>lvl()>.05};
+})();
 
 var MPo=null;
 /* ---------- MULTI-PENGGUNA: tamu lain ikut masuk kantor lewat Supabase Realtime ---------- */
@@ -4926,7 +5197,7 @@ if(cfg.on&&cfg.name)setTimeout(connect,2500);
 return {items:()=>me?[me].concat([...guests.values()]).map(g=>({k:g.x+g.y+.02,f:t=>drawGuest(g,t)})):[],
   vis:()=>me?[me].concat([...guests.values()]):[],tick,say,count};
 })();
-function OVA(){const b=AG.concat([OB]);return MPo?b.concat(MPo.vis()):b;}
+function OVA(){let b=AG.concat([OB]);if(EVT)b=b.concat(EVT.npcs());return MPo?b.concat(MPo.vis()):b;}
 
 /* ---------- ukuran & loop ---------- */
 let Z=1.1,PX=0,PY=0,S0=1,LW=0,LH=0;
@@ -4988,6 +5259,7 @@ function frame(ts){
   const dt=Math.min(.05,(ts-last)/1000);last=ts;
   update(dt);
   if(MPo)MPo.tick(dt);
+  if(EVT)EVT.tick(dt);
   render(ts/1000);
   acc+=dt;if(acc>.4){acc=0;syncRoster();syncPhase();syncRooms();}
   syncTip();
