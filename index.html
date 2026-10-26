@@ -4202,7 +4202,8 @@ async function carouselRun(a,prompt,ut,meta){
 }
 async function gemRun(a,prompt,task,ut,mode,meta){
  const img=mode==='img';
- lastAg=a;a.busy=(a.busy||0)+1;
+ const chat=mode==='chat';
+ lastAg=a;if(!chat)a.busy=(a.busy||0)+1;
  const tkSet=(st,ow)=>{if(!ut)return;ut.st=st;ut.ow=ow;if(st===2)ut.dt=Date.now();save();refreshTasks(Date.now());};
  tkSet(1,a.id);
  const t0=Date.now(),r=addMsg(a,'Sedang berpikir…','',t0,false);
@@ -4238,7 +4239,7 @@ async function gemRun(a,prompt,task,ut,mode,meta){
   const flat=text.replace(/\s+/g,' ');
   log.push({t:Date.now(),id:a.id,text:flat.slice(0,220)+(flat.length>220?'… (selengkapnya di tombol HASIL)':''),sys:''});save();
   finishRow(r,acts,rec);if(meta&&meta.noRec)acts.remove();tkSet(2,a.id);
-  a.bubble={text:'Selesai, cek hasilnya',ttl:4};beep();
+  if(!chat)a.bubble={text:'Selesai, cek hasilnya',ttl:4};beep();
   return text;
  }catch(e){
   if(raf)cancelAnimationFrame(raf);
@@ -4253,7 +4254,7 @@ async function gemRun(a,prompt,task,ut,mode,meta){
    if(/API key|Akses ditolak|Model "/.test(msg))acts.append(mini('Buka pengaturan',openSet));
   }
  }finally{
-  a.busy=Math.max(0,(a.busy||1)-1);
+  if(!chat)a.busy=Math.max(0,(a.busy||1)-1);
   clearInterval(bt);
   if(a.bubble&&/^(Berpikir|Menulis|Mencoba|Membuat)/.test(a.bubble.text))a.bubble=null;
  }
@@ -4416,13 +4417,16 @@ function answer(a,txt){
   for(const [re,fn] of REPLY){if(re.test(s)){const r=fn(a);if(r)return r;}}
   return pick(['Dicatat, CEO.','Saya kerjakan setelah tugas yang sekarang.','Oke. Mau dijadikan tugas? Ketik /tugas lalu judulnya.','Siap, saya perhatikan.']);
 }
+const CHATP='[Mode obrolan santai, BUKAN tugas. Jawab singkat dan natural (maksimal 3 sampai 4 kalimat) sesuai kepribadianmu. Jangan membuat dokumen, kode panjang, desain, atau hasil kerja lengkap. Jika Bos ingin hasil kerja, ingatkan dengan ramah agar memakai perintah /tugas <perintah>.]\n';
 function respond(txt,forced){
   if(!ai){if(GM.key)addMsg(byId('boss'),'AI sedang OFF, jadi agen tidak membalas. Nyalakan saklar AI di bagian atas chat.','hint');return;}
-  const gm=txt.match(/^\/gambar\b\s*(.*)/i),wantImg=!!gm||isImgReq(txt);
+  const gm=txt.match(/^\/gambar\b\s*(.*)/i),wantImg=!!gm;
+  /* pesan biasa hanya obrolan; pekerjaan (termasuk gambar) wajib lewat /tugas atau /gambar */
+  if(!gm&&isImgReq(txt)){addMsg(byId('boss'),'Untuk membuat gambar atau carousel, ketik /gambar <deskripsi>. Untuk pekerjaan lain, ketik /tugas <perintah>. Pesan biasa hanya jadi obrolan.','hint');return;}
   if(gm&&!gm[1].trim()){addMsg(byId('boss'),'Contoh: /gambar kucing astronot di bulan, gaya pixel art','hint');return;}
   if(wantImg&&!GM.key){addMsg(byId('boss'),'Membuat gambar atau foto butuh Gemini. Klik tombol GEMINI di bawah chat lalu masukkan API key.','hint');return;}
   if(GM.key&&wantImg&&isCarouselReq(txt)){carouselRun(forced||byId('nova'),txt,null);return;}
-  if(GM.key){gemRun(forced||(wantImg?byId('nova'):pickAgent(txt)),gm?gm[1].trim():txt,false,null,wantImg?'img':undefined);return;}
+  if(GM.key){if(wantImg)gemRun(forced||byId('nova'),gm[1].trim(),false,null,'img');else gemRun(forced||pickAgent(txt),CHATP+txt,false,null,'chat',{noRec:true,chat:1,title:txt});return;}
   if(!GM.key&&skills.some(k=>k.on)&&!window.__skHint){window.__skHint=1;addMsg(byId('boss'),'Skill yang Anda unggah baru berpengaruh setelah Gemini terhubung. Sekarang balasan agen masih simulasi.','hint');}
   if(!hintedKey){hintedKey=true;addMsg(byId('boss'),'Balasan ini masih simulasi. Klik tombol GEMINI di bawah chat lalu masukkan API key dari Google AI Studio agar agen menjawab sungguhan.','hint');}
   const m=AIS.find(a=>new RegExp('@'+a.name,'i').test(txt));
@@ -4437,7 +4441,7 @@ $('#form').addEventListener('submit',e=>{
   inp.value='';
   addMsg(boss,txt,'',Date.now(),true);beep();
   if(MPo&&!/^[\/@]/.test(txt))MPo.say(txt);
-  if(/^\/help$/i.test(txt)){addMsg(boss,'Perintah:\n/skill membuka pengelola skill (unggah SKILL.md atau zip)\n/gambar <deskripsi> membuat gambar atau foto (butuh Gemini)\n/tugas <perintah> memberi tugas ke seluruh tim (Einstein, DeepSeek, Doraemon bekerja bersama). Agen mengajukan rencana (dan usulan yang lebih berguna bila ada), dikerjakan setelah Anda setujui; hasilnya muncul di chat dan tombol HASIL\n@Einstein, @DeepSeek, @Doraemon bicara langsung\nPERINTAH LANGSUNG (bukan tugas): contoh "@Naruto ngopi dulu", "Yukina diam di ruang santai 10 menit", "semua ke ruang rapat", "@BananaCat joget 30 detik", "semua kumpul di ruang bermain sampai aku bilang", "bubar" untuk membatalkan\n/gemini pengaturan API key\n/hasil riwayat hasil\n/reset hapus ingatan percakapan agen\n/obrolan on|off obrolan antar-agen ditulis Gemini (panjang dan selalu baru)\n/status papan tugas\n/adzan reset hapus file adzan\nShift+Enter untuk baris baru.','hint');return;}
+  if(/^\/help$/i.test(txt)){addMsg(boss,'Perintah:\n/skill membuka pengelola skill (unggah SKILL.md atau zip)\n/gambar <deskripsi> membuat gambar atau foto (butuh Gemini)\n/tugas <perintah> memberi tugas ke seluruh tim (Einstein, DeepSeek, Doraemon bekerja bersama). Agen mengajukan rencana (dan usulan yang lebih berguna bila ada), dikerjakan setelah Anda setujui; hasilnya muncul di chat dan tombol HASIL\n@Einstein, @DeepSeek, @Doraemon bicara langsung\nPERINTAH LANGSUNG (bukan tugas): contoh "@Naruto ngopi dulu", "Yukina diam di ruang santai 10 menit", "semua ke ruang rapat", "@BananaCat joget 30 detik", "semua kumpul di ruang bermain sampai aku bilang", "bubar" untuk membatalkan\n/gemini pengaturan API key\n/hasil riwayat hasil\n/reset hapus ingatan percakapan agen\n/obrolan on|off obrolan antar-agen ditulis Gemini (panjang dan selalu baru)\n/status papan tugas\n/adzan reset hapus file adzan\nPesan biasa hanya obrolan atau perintah langsung. Pekerjaan wajib lewat /tugas atau /gambar.\nShift+Enter untuk baris baru.','hint');return;}
   if(/^\/gemini$/i.test(txt)){openSet();return;}
   if(/^\/hasil$/i.test(txt)){openList();return;}
   if(/^\/supabase$/i.test(txt)){sbOpen();return;}
