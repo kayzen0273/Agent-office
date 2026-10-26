@@ -5008,7 +5008,7 @@ function cmd(arg){
   if(!fire(map[a]||undefined))sysm(boss,'Kejadian belum bisa dimulai (jenis yang sama masih berlangsung, sudah ada 3 kejadian, agen sibuk, atau waktu sholat).');
 }
 $('#evbtn').addEventListener('click',()=>cmd(''));
-return {tick,items,over,cmd,npcs:()=>[K,V,CAT].filter(n=>n.on),dark:()=>lvl()>.05,fire,hook:f=>{HK=f;},H:{give,free,crew,rr,shuf}};
+return {tick,items,over,cmd,npcs:()=>[K,V,CAT].filter(n=>n.on),all:()=>[K,V,CAT],dark:()=>lvl()>.05,fire,hook:f=>{HK=f;},H:{give,free,crew,rr,shuf}};
 })();
 
 var MPo=null;
@@ -5031,6 +5031,7 @@ cfg.name=cleanName(cfg.name);cfg.room=cleanRoom(cfg.room)||'umum';cfg.color=okCo
 const saveCfg=()=>{try{localStorage.setItem(KEY,JSON.stringify(cfg));}catch(e){}};
 
 const guests=new Map();
+let net=null,lastAg=0;
 let me=null,ws=null,joinRef=null,hb=0,rt=0,tries=0,joined=false,stopped=true,seq=1,lastPos=0;
 const topic=()=>'realtime:aoffice-'+cfg.room;
 const raw=(event,payload,t)=>{if(!ws||ws.readyState!==1)return false;try{ws.send(JSON.stringify({topic:t||topic(),event,payload,ref:String(seq++),join_ref:joinRef}));return true;}catch(e){return false;}};
@@ -5172,6 +5173,8 @@ function onBc(ev,p){
     if(!g)return;g.tx=num(p.x,0,40,g.tx);g.ty=num(p.y,0,40,g.ty);
   }else if(ev==='emo'){
     if(!g||EMO.indexOf(p.e)<0)return;g.bubble={text:p.e,ttl:2.6};if(p.e==='👋')g.wave=2.4;
+  }else if(ev==='ag'){
+    if(id===hostId()&&id!==cfg.id&&Array.isArray(p.a))net={t:Date.now(),a:p.a,n:Array.isArray(p.n)?p.n:[]};
   }else if(ev==='evt'){
     if(EVT&&typeof p.t==='string'&&EVT.fire(p.t,+p.s||0,true))addMsg(g||me||boss,'memicu kejadian bersama: '+p.t,'sys',Date.now(),false);
   }
@@ -5188,9 +5191,25 @@ function walkTo(node){
   for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]));
   me.w={t0:Date.now(),pts,cum};
 }
+const hostId=()=>[cfg.id].concat([...guests.keys()]).sort()[0];
+function sync(){
+  if(!net||!joined||Date.now()-net.t>2500||hostId()===cfg.id||prayerAt(Date.now()))return;
+  (net.a||[]).forEach(r=>{
+    if(!Array.isArray(r))return;
+    const a=r[0]==='ob'?OB:byId(r[0]);if(!a)return;
+    const tx=num(r[1],-2,45,a.x),ty=num(r[2],-2,45,a.y);
+    if(Math.hypot(tx-a.x,ty-a.y)>4){a.x=tx;a.y=ty;}else{a.x+=(tx-a.x)*.3;a.y+=(ty-a.y)*.3;}
+    a.state=String(r[3]).slice(0,12);a.act=String(r[4]||'').slice(0,80);a.loc=String(r[5]||'work').slice(0,12);
+  });
+  EVT.all().forEach(n=>{const r=(net.n||[]).find(q=>q&&q[0]===n.id);if(r){n.on=!!r[1];n.x=num(r[2],-2,45,n.x);n.y=num(r[3],-2,45,n.y);n.state=String(r[4]).slice(0,12);}});
+}
 function tick(dt){
   if(!me)return;
   const now=Date.now();
+  if(joined&&guests.size&&hostId()===cfg.id&&now-lastAg>350){
+    lastAg=now;
+    bc('ag',{i:cfg.id,a:AG.concat([OB]).map(a=>[a.id,+a.x.toFixed(2),+a.y.toFixed(2),a.state,a.act,a.loc]),n:EVT.all().map(n=>[n.id,n.on?1:0,+n.x.toFixed(2),+n.y.toFixed(2),n.state])});
+  }
   if(me.w){
     const w=me.w,total=w.cum[w.cum.length-1],d=Math.max(0,Math.min(total,(now-w.t0)/1000*SPEED));
     let i=1;while(i<w.cum.length-1&&w.cum[i]<d)i++;
@@ -5289,7 +5308,7 @@ if(cfg.on&&cfg.name)setTimeout(connect,2500);
 
 return {items:()=>me?[me].concat([...guests.values()]).map(g=>({k:g.x+g.y+.02,f:t=>drawGuest(g,t)})):[],
   vis:()=>me?[me].concat([...guests.values()]):[],tick,say,count,
-  host:()=>!joined||[...guests.keys()].every(k=>cfg.id<k),ev:(t,s)=>bc('evt',{i:cfg.id,t,s}),
+  host:()=>!joined||hostId()===cfg.id,sync,ev:(t,s)=>bc('evt',{i:cfg.id,t,s}),
   pray:()=>{if(me&&joined)walkTo('J'+(1+hs(cfg.id)%5));},unpray:()=>{if(me&&joined)walkTo('gate');}};
 })();
 function OVA(){let b=AG.concat([OB]);if(EVT)b=b.concat(EVT.npcs());return MPo?b.concat(MPo.vis()):b;}
@@ -5519,6 +5538,7 @@ function frame(ts){
   update(dt);
   if(MPo)MPo.tick(dt);
   if(EVT)EVT.tick(dt);
+  if(MPo)MPo.sync();
   render(ts/1000);
   acc+=dt;if(acc>.4){acc=0;syncRoster();syncPhase();syncRooms();}
   syncTip();
