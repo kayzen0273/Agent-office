@@ -1998,6 +1998,29 @@ const EN=[17.05,13.1],TP=[[17.3,16.1],[17.3,17.2]],QP=[[18.7,14.4],[18.7,13.5]],
 Object.values(SP).forEach(p=>p[0]+=6);EN[0]+=6;TP.forEach(p=>p[0]+=6);QP.forEach(p=>p[0]+=6);
 QP.push([23.7,14.1],[23.7,14.9],[23.7,15.7]);/* antrean wudhu lebih panjang karena agen bertambah */
 const PT=[['Subuh',4,25,2],['Dzuhur',11,50,4],['Ashar',15,10,4],['Maghrib',17,50,3],['Isya',19,0,4]];
+/* jadwal sholat real-time: dihitung dari koordinat + tanggal (metode Kemenag RI: Subuh -20, Isya -18, Ashar mazhab Syafii, ihtiyati +2 menit). Tanpa jaringan. Jum'at: Dzuhur diganti sholat Jum'at (2 rakaat, 2 adzan, khutbah) */
+var JSENT={},PTC={k:'',v:null};
+function ptFor(d){
+  const L=window.PLOC||{lat:-7.4244,lon:109.2302},k=d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate()+'|'+(+L.lat).toFixed(2)+'|'+(+L.lon).toFixed(2);
+  if(PTC.k===k)return PTC.v;
+  let v=PT;
+  try{
+    const R=Math.PI/180,s=x=>Math.sin(x*R),c=x=>Math.cos(x*R),tz=-d.getTimezoneOffset()/60,lat=+L.lat,lon=+L.lon;
+    const D=Date.UTC(d.getFullYear(),d.getMonth(),d.getDate(),12)/864e5+2440587.5-2451545;
+    const g=357.529+.98560028*D,q=280.459+.98564736*D,Lm=q+1.915*s(g)+.02*s(2*g),e=23.439-3.6e-7*D;
+    let RA=Math.atan2(c(e)*s(Lm),c(Lm))/R/15;RA=(RA%24+24)%24;
+    const dec=Math.asin(s(e)*s(Lm))/R;let eq=q/15-RA;eq=((eq+12)%24+24)%24-12;
+    const noon=12+tz-lon/15-eq;
+    const ha=a=>Math.acos(Math.max(-1,Math.min(1,(s(a)-s(lat)*s(dec))/(c(lat)*c(dec)))))/R/15;
+    const asr=Math.atan(1/(1+Math.tan(Math.abs(lat-dec)*R)))/R;
+    const mk=(n,t,rk,j)=>{const m=Math.ceil(t*60+2);return [n,Math.floor(m/60)%24,m%60,rk,j];};
+    const fri=d.getDay()===5;
+    v=[mk('Subuh',noon-ha(-20),2),fri?mk("Jum'at",noon,2,1):mk('Dzuhur',noon,4),mk('Ashar',noon+ha(asr),4),mk('Maghrib',noon+ha(-.833),3),mk('Isya',noon+ha(-18),4)];
+    if(v.some(x=>!isFinite(x[1])||!isFinite(x[2])))v=PT;
+  }catch(err){v=PT;}
+  PTC={k,v};return v;
+}
+const KH1=['Alhamdulillah, puji syukur kepada Allah','Ma’asyiral muslimin, bertakwalah','Jaga amanah, bekerja dengan jujur','Perbanyak sholawat dan sedekah'],KH2=['Khutbah kedua: sholawat kepada Nabi','Doa untuk kaum muslimin','Doa untuk kebaikan negeri'],KD=8,MBP=[23.4,13.15];
 /* ---------- MASJID: desain ulang ---------- */
 let adhanOn=false;
 const WCOL='#e6edf2',GOLD='#d9b44a',CREAM='#eef2f5',WOOD1='#6b4228',WOOD2='#8a5a38';
@@ -2265,7 +2288,7 @@ function rkPose(ee,r,rk){
   if(last){return ee<12.8?(ee<8.8?'duduk':'tahiyat'):ee<13.9?'salamR':'salamL';}
   return ee<8.8?'duduk':'tahiyat';
 }
-function planP(rk,dur){
+function planP(rk,dur,jum){
   const ag={},ord=[];
   AG.forEach(a=>{
     const s=SEATS[a.desk],kn=a.desk>=4,h=[s].concat(route('s'+a.desk,kn?'k2s':'gate').map(n=>NODES[n]));
@@ -2290,13 +2313,27 @@ function planP(rk,dur){
     g.segs.push({t0:tw0,t1:tw1,pos:TP[tap],act:'Berwudhu',wud:tap},{t0:tw1,t1:tw1+sp.T,p:sp,act:'Memakai '+(g.a.g==='f'?'mukena':'sarung & peci'),garb:1});
     g.rdy=tw1+sp.T;
   });
-  const IQ=Math.max(Math.max(...ord.map(g=>g.rdy))+16,dur+8),F0=IQ+4,FE=F0+fardLen(rk)+1.5,DE=FE+9;let total=0;
+  const RD=Math.max(...ord.map(g=>g.rdy));let T1=0,T2=0,T3=0,KE=0,MW=null,MB=null;
+  if(jum){MW=PP([SP.boss,[22.6,12.95],MBP]);MB=PP([MBP,[22.6,12.95],SP.boss]);T1=Math.max(RD+6,dur+4);T2=T1+MW.T+2;T3=T2+dur+3;KE=T3+(KH1.length+KH2.length)*KD+5;}
+  const IQ=jum?KE+MB.T+6:Math.max(RD+16,dur+8),F0=IQ+4,FE=F0+fardLen(rk)+1.5,DE=FE+9;let total=0;
   const XO={};
   ord.forEach(g=>{const id=g.a.id,vy=SP[id][1]<15.2?15.2:SP[id][1];XO[id]=PP([SP[id],[SP[id][0],vy],[23.05,vy],EN]);});
   ord.slice().sort((p,q)=>XO[p.a.id].T-XO[q.a.id].T).forEach((g,i)=>{g.dly=i*GAP;});
   ord.forEach(g=>{
     const id=g.a.id,P0={pos:SP[id],back:1,garb:1},S=g.segs,dly=g.dly||0;
-    if(SUN.includes(id))S.push({t0:g.rdy,t1:g.rdy+15.5,...P0,act:'Sholat sunnah',sun:1},{t0:g.rdy+15.5,t1:IQ,...P0,pose:'duduk',act:'Berzikir, menunggu iqamah'});
+    if(jum){
+      if(id==='boss'){
+        S.push({t0:g.rdy,t1:T1,...P0,pose:'duduk',act:'Menunggu adzan pertama selesai'},{t0:T1,t1:T1+MW.T,p:MW,act:'Naik ke mimbar',garb:1},{t0:T1+MW.T,t1:T3,...P0,pos:MBP,pose:'duduk',back:0,act:'Khatib duduk di mimbar, adzan kedua'});
+        let t=T3;KH1.forEach(b=>{S.push({t0:t,t1:t+KD,...P0,pos:MBP,pose:'qiyam',back:0,act:'Khatib: khutbah pertama',bub:b});t+=KD;});
+        S.push({t0:t,t1:t+5,...P0,pos:MBP,pose:'duduk',back:0,act:'Khatib duduk di antara dua khutbah'});t+=5;
+        KH2.forEach(b=>{S.push({t0:t,t1:t+KD,...P0,pos:MBP,pose:'qiyam',back:0,act:'Khatib: khutbah kedua',bub:b});t+=KD;});
+        S.push({t0:KE,t1:KE+MB.T,p:MB,act:'Turun dari mimbar, bersiap menjadi imam',garb:1},{t0:KE+MB.T,t1:IQ,...P0,pose:'duduk',act:'Menunggu iqamah'});
+      }else{
+        if(SUN.includes(id))S.push({t0:g.rdy,t1:g.rdy+15.5,...P0,act:'Sholat tahiyatul masjid',sun:1},{t0:g.rdy+15.5,t1:T3,...P0,pose:'duduk',act:'Duduk, menunggu khutbah'});
+        else S.push({t0:g.rdy,t1:T3,...P0,pose:'duduk',act:'Menunggu khutbah'});
+        S.push({t0:T3,t1:KE,...P0,back:0,pose:'duduk',act:'Mendengarkan khutbah'},{t0:KE,t1:IQ,...P0,pose:'duduk',act:'Menunggu iqamah'});
+      }
+    }else if(SUN.includes(id))S.push({t0:g.rdy,t1:g.rdy+15.5,...P0,act:'Sholat sunnah',sun:1},{t0:g.rdy+15.5,t1:IQ,...P0,pose:'duduk',act:'Berzikir, menunggu iqamah'});
     else S.push({t0:g.rdy,t1:IQ,...P0,pose:'duduk',act:'Menunggu iqamah'});
     const o=XO[id];
     S.push({t0:IQ,t1:F0,...P0,pose:'qiyam',act:'Iqamah, merapikan shaf',bub:id==='boss'?'Iqamah':null},{t0:F0,t1:FE,...P0,fard:1},
@@ -2305,10 +2342,10 @@ function planP(rk,dur){
       {t0:DE+dly,t1:DE+dly+o.T,p:o,act:'Selesai sholat',garb:1},{t0:DE+dly+o.T,t1:DE+dly+o.T+g.back.T,p:g.back,act:'Kembali ke meja'});
     total=Math.max(total,DE+dly+o.T+g.back.T);
   });
-  return {ag,total,IQ};
+  return {ag,total,IQ,jum:!!jum,A2:T2,KS:T3};
 }
 const PLC={},DLOCK={};let demo=null;
-const planFor=(rk,dur)=>{const k=rk+':'+Math.round(dur);return PLC[k]||(PLC[k]=planP(rk,dur));};
+const planFor=(rk,dur,jum)=>{const k=rk+':'+Math.round(dur)+(jum?'j':'');return PLC[k]||(PLC[k]=planP(rk,dur,jum));};
 /* lama adzan (detik): panjang file mp3 yang dipilih, atau panjang adzan sintetis. Dikunci per waktu sholat agar iqamah tidak bergeser. */
 function adhanDur(name){
   if(ADHAN_URL){const d=adAudio.duration;return isFinite(d)&&d>0?d:null;}
@@ -2322,9 +2359,9 @@ function lockDur(t0,name,active){
   return d;
 }
 function prayerAt(ms){
-  if(demo){const p=planFor(demo.rk,lockDur(demo.t0,demo.name,ms>=demo.t0));if(ms>=demo.t0&&ms<demo.t0+p.total*1000)return {t0:demo.t0,name:demo.name,rk:demo.rk,plan:p};}
+  if(demo){const p=planFor(demo.rk,lockDur(demo.t0,demo.name,ms>=demo.t0),demo.jum);if(ms>=demo.t0&&ms<demo.t0+p.total*1000)return {t0:demo.t0,name:demo.name,rk:demo.rk,jum:demo.jum,plan:p};}
   const d=new Date(ms);
-  for(const [name,h,m,rk] of PT){const t0=new Date(d.getFullYear(),d.getMonth(),d.getDate(),h,m).getTime(),p=planFor(rk,lockDur(t0,name,ms>=t0));if(ms>=t0&&ms<t0+p.total*1000)return {t0,name,rk,plan:p};}
+  for(const [name,h,m,rk,jum] of ptFor(d)){const t0=new Date(d.getFullYear(),d.getMonth(),d.getDate(),h,m).getTime(),p=planFor(rk,lockDur(t0,name,ms>=t0),jum);if(ms>=t0&&ms<t0+p.total*1000)return {t0,name,rk,jum,plan:p};}
   return null;
 }
 function applyPray(a,ps,el){
@@ -4647,12 +4684,19 @@ setInterval(()=>{
     evs.forEach(e=>{if(e.sys)return addMsg(e.who,e.text,'sys',e.t);if(recent.includes(e.text))return;recent.push(e.text);if(recent.length>60)recent.shift();speak(e.who,e.text,e.t,false);});
   }
   {const ps=prayerAt(now),pp=prayerAt(lastT);
-   if(ps&&(now-ps.t0)/1000>=ps.plan.IQ&&iqSent!==ps.t0){iqSent=ps.t0;addMsg(boss,'Adzan selesai. Iqamah dikumandangkan, merapikan shaf.','sys',now);}
-   if(ps&&(!pp||pp.t0!==ps.t0)){addMsg(boss,'Adzan '+ps.name+' berkumandang. Waktunya sholat berjamaah di masjid.','sys',now);startAdhan(ps.name==='Subuh');if(!touched&&!muted){adhanPend=ps.t0;addMsg(boss,'Klik atau ketuk layar sekali agar suara adzan bisa diputar.','hint',now);}}
+   if(ps&&ps.plan.jum){const el=(now-ps.t0)/1000;
+     if(el>=ps.plan.A2&&el<ps.plan.A2+15&&JSENT.a!==ps.t0){JSENT.a=ps.t0;addMsg(boss,'Khatib naik mimbar. Adzan kedua sholat Jum’at berkumandang.','sys',now);startAdhan(false);}
+     if(el>=ps.plan.KS&&JSENT.k!==ps.t0){JSENT.k=ps.t0;addMsg(boss,'Adzan selesai. Khutbah Jum’at dimulai, jamaah mendengarkan dengan tenang.','sys',now);}}
+   if(ps&&(now-ps.t0)/1000>=ps.plan.IQ&&iqSent!==ps.t0){iqSent=ps.t0;addMsg(boss,ps.jum?'Khutbah selesai. Iqamah dikumandangkan, merapikan shaf.':'Adzan selesai. Iqamah dikumandangkan, merapikan shaf.','sys',now);}
+   if(ps&&(!pp||pp.t0!==ps.t0)){addMsg(boss,ps.jum?'Adzan pertama sholat Jum’at berkumandang. Waktunya ke masjid.':'Adzan '+ps.name+' berkumandang. Waktunya sholat berjamaah di masjid.','sys',now);startAdhan(ps.name==='Subuh');if(!touched&&!muted){adhanPend=ps.t0;addMsg(boss,'Klik atau ketuk layar sekali agar suara adzan bisa diputar.','hint',now);}}
    if(pp&&(!ps||ps.t0!==pp.t0)){addMsg(boss,'Sholat '+pp.name+' selesai. Kembali bekerja.','sys',now);stopAdhan();}}
   lastT=now;
 },1000);
-let di=0;$('#sholat').addEventListener('click',()=>{const q=PT[di++%PT.length];demo={t0:Date.now(),name:q[0],rk:q[3]};});
+const DEMOS=[['Subuh',2],['Dzuhur',4],["Jum'at",2,1],['Ashar',4],['Maghrib',3],['Isya',4]];
+let di=0;$('#sholat').title='Klik: tampilkan jadwal hari ini dan demo sholat (berulang: Subuh, Dzuhur, Jum\u2019at, Ashar, Maghrib, Isya)';
+$('#sholat').addEventListener('click',()=>{const q=DEMOS[di++%DEMOS.length];demo={t0:Date.now(),name:q[0],rk:q[1],jum:q[2]};
+  const L=window.PLOC||{},tt=ptFor(new Date()).map(x=>x[0]+' '+String(x[1]).padStart(2,'0')+':'+String(x[2]).padStart(2,'0')).join(' · ');
+  addMsg(boss,'Jadwal hari ini'+(L.city?' ('+L.city+')':'')+': '+tt+'. Demo: '+q[0]+'.','sys',Date.now());});
 
 
 /* ---------- KEJADIAN ACAK: pizza datang, listrik padam, tamu penting ---------- */
@@ -5318,7 +5362,7 @@ var WLD=(()=>{
 const WK='agentOffice.world.v1',H=EVT.H;
 let C={city:'Jakarta',lat:-6.2,lon:106.82,sched:[],scores:[],rep:{on:true,time:'17:30',last:''}};
 try{Object.assign(C,JSON.parse(localStorage.getItem(WK)||'{}'));}catch(e){}
-const sv=()=>{try{localStorage.setItem(WK,JSON.stringify(C));}catch(e){}};
+const sv=()=>{window.PLOC={lat:C.lat,lon:C.lon,city:C.city};try{localStorage.setItem(WK,JSON.stringify(C));}catch(e){}};window.PLOC={lat:C.lat,lon:C.lon,city:C.city};
 if(!C.seeded){C.seeded=1;C.sched.push({id:'s-bawaan',time:'09:00',agent:'yukina',prompt:'Susun ide konten hari ini: 5 ide posting lengkap dengan hook, caption singkat, dan hashtag.',on:true,last:''});sv();}
 const say=(t,k)=>addMsg(boss,t,k||'sys',Date.now(),false);
 const day=()=>{const d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();};
