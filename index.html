@@ -4545,6 +4545,7 @@ $('#form').addEventListener('submit',e=>{
     if(ai){const who=LIVE()?pickAgent(m[1]):(byId(userTask(ut).owner)||pick(AIS));proposeTask(who,m[1],ut);}
     return;
   }
+  if(SYNCo&&SYNCo.fwd(txt))return;
   if(handleCmd(txt))return;
   respond(txt);
 });
@@ -5040,7 +5041,7 @@ function tick(dt){
     else if(e.type==='pizza')updPizza(now);else if(e.type==='blackout')updBlack();else if(e.type==='vip')updVip();else if(e.type==='kucing')updCat();else if(e.type==='ultah')updB();else updPr();
     cur=null;
   });
-  if(auto&&clk>=next&&!document.hidden&&!pr&&(!MPo||MPo.host()))next=clk+(fire()?25+Math.random()*50:15);
+  if(auto&&clk>=next&&!document.hidden&&!pr&&(!MPo||MPo.host())&&(!SYNCo||SYNCo.host()))next=clk+(fire()?25+Math.random()*50:15);
 }
 function cmd(arg){
   const a=String(arg||'').toLowerCase();
@@ -5357,6 +5358,104 @@ return {items:()=>me?[me].concat([...guests.values()]).map(g=>({k:g.x+g.y+.02,f:
 })();
 function OVA(){let b=AG.concat([OB]);if(EVT)b=b.concat(EVT.npcs());return MPo?b.concat(MPo.vis()):b;}
 
+/* ---------- SINKRON REAL-TIME ANTAR DEVICE: db (data bersama) + room (dunia langsung, satu host menggerakkan semua mirror) ---------- */
+var SYNCo=(()=>{
+const ID=Math.random().toString(16).slice(2,12),num=(v,a,b,d)=>{v=Number(v);return isFinite(v)?Math.max(a,Math.min(b,v)):d;};
+let db=null,room=null,net=null,inNet=false,slow=400,lastAg=0,scanT=0;const live={},busy={},last={};
+const vis=()=>document.hidden?0:1;
+const peers=()=>{try{return room?room.peers().filter(p=>!p.isMe&&!p.guest&&p.presence&&p.presence.id):[];}catch(e){return [];}};
+const hostId=()=>{const c=[{id:ID,v:vis()}].concat(peers().map(p=>({id:String(p.presence.id),v:p.presence.v})));const v=c.filter(x=>x.v);return (v.length?v:c).map(x=>x.id).sort()[0];};
+const host=()=>hostId()===ID;
+const fromHost=d=>!!d&&typeof d==='object'&&d.h===hostId()&&d.h!==ID;
+const agentLine=(a,sys)=>!!a&&a.id!=='boss'&&!a.guest&&!a.human&&sys!=='hint';
+const emit=(t,d)=>{try{room.emit(t,d).catch(()=>{});return true;}catch(e){return false;}};
+const canon=v=>JSON.stringify(v,(k,x)=>x&&typeof x==='object'&&!Array.isArray(x)?Object.keys(x).sort().reduce((o,c)=>(o[c]=x[c],o),{}):x);
+const cap=(a,n)=>{while(a.length>1&&JSON.stringify(a).length>n)a.shift();return a;};
+const T6=6*3600e3,ts=(p,q)=>(p.t||0)-(q.t||0),sid=(p,q)=>String(p.id)<String(q.id)?-1:1,cmpLog=(p,q)=>p.t-q.t||(chatId(p)<chatId(q)?-1:1);
+function merge(arr,list,kf,first,keep,cmp){
+  list=(Array.isArray(list)?list:[]).filter(x=>x&&kf(x)!==undefined);
+  const out=(first?arr:arr.filter(keep)).slice();
+  list.forEach(x=>{const k=kf(x),i=out.findIndex(y=>kf(y)===k);if(i<0)out.push(x);else out[i]=x;});
+  out.sort(cmp);arr.splice(0,arr.length,...out);
+}
+const _add=addMsg,_spk=speak,_sv=save;
+/* obrolan agen: hanya host yang menulis, mirror menampilkan kiriman host */
+addMsg=function(a,text,sys,t,keep){
+  if(room&&!inNet&&agentLine(a,sys)&&peers().length){
+    if(!keep&&!host()){const d=document.createElement('div');return {row:d,body:d,tx:d,tm:d};}
+    if(host())emit('chat',{h:ID,i:a.id,t:String(text).slice(0,500),s:sys||'',k:keep?1:0});
+  }
+  return _add.apply(this,arguments);
+};
+speak=function(a,text,t,keep){if(room&&!inNet&&!keep&&agentLine(a,'')&&peers().length&&!host())return;return _spk.apply(this,arguments);};
+save=function(){_sv.apply(this,arguments);clearTimeout(scanT);scanT=setTimeout(scan,350);};
+/* data bersama: log chat, tugas, hasil, skill */
+const DOCS={
+ state:{get:()=>({log:cap(log.slice().sort(cmpLog).slice(-40),200000),utasks:utasks.filter(u=>u.ap!=='pending').sort(ts)}),
+  use:(d,first)=>{const had=new Set(log.map(chatId)),now=Date.now();
+   merge(log,(d.log||[]).filter(e=>typeof e.text==='string'&&byId(e.id)&&now-e.t<T6),chatId,true,0,cmpLog);
+   merge(utasks,(d.utasks||[]).filter(u=>typeof u.t==='number'&&u.ap!=='pending'&&now-u.t<T6),u=>u.t,true,0,ts);
+   const nw=log.filter(e=>!had.has(chatId(e)));_sv();refreshTasks(now);
+   nw.forEach(e=>{const r=_add(byId(e.id),e.text,e.sys,e.t,false);const nx=[...msgs.children].find(c=>c!==r.row&&+c.dataset.t>e.t);if(nx)msgs.insertBefore(r.row,nx);});
+   msgs.scrollTop=msgs.scrollHeight;}},
+ results:{get:()=>({list:cap(results.filter(r=>!(r.imgs&&r.imgs.length)).sort(ts).slice(-12),180000)}),
+  use:(d,first)=>{merge(results,d.list,r=>r.id,first,r=>r.imgs&&r.imgs.length,ts);try{localStorage.setItem(RSK,JSON.stringify(rSer(results.slice(-30))));}catch(e){}gCount();}},
+ skills:{get:()=>({list:cap(skills.slice().sort(sid),180000)}),
+  use:(d,first)=>{merge(skills,d.list,k=>k.id,first,()=>false,sid);try{localStorage.setItem(SKK,JSON.stringify(skills));}catch(e){}skCount();}}
+};
+function scan(){
+  if(!db)return;
+  for(const k in DOCS){
+    if(!live[k]||busy[k])continue;
+    let c;try{c=JSON.parse(JSON.stringify(DOCS[k].get()));}catch(e){continue;}
+    const s=canon(c);if(s===last[k]||s.length>240000)continue;
+    if(last[k]===undefined&&Object.values(c).every(v=>Array.isArray(v)&&!v.length))continue;
+    busy[k]=1;last[k]=s;
+    db.doc('office/'+k).set(Object.assign(c,{by:ID,rev:Date.now()})).catch(()=>{live[k]=false;}).finally(()=>{busy[k]=0;});
+  }
+}
+/* dunia: host menyiarkan posisi, aktivitas, dan kejadian agen; mirror menirunya */
+function mirror(){
+  if(!net||!room||host()||Date.now()-net.t>2500||prayerAt(Date.now()))return;
+  net.a.forEach(r=>{
+    if(!Array.isArray(r))return;const a=r[0]==='ob'?OB:byId(r[0]);if(!a)return;
+    const tx=num(r[1],-2,45,a.x),ty=num(r[2],-2,45,a.y);
+    if(Math.hypot(tx-a.x,ty-a.y)>4){a.x=tx;a.y=ty;}else{a.x+=(tx-a.x)*.3;a.y+=(ty-a.y)*.3;}
+    a.state=String(r[3]).slice(0,12);a.act=String(r[4]||'').slice(0,80);a.loc=String(r[5]||'work').slice(0,12);
+  });
+  EVT.all().forEach(n=>{const r=net.n.find(q=>q&&q[0]===n.id);if(r){n.on=!!r[1];n.x=num(r[2],-2,45,n.x);n.y=num(r[3],-2,45,n.y);n.state=String(r[4]).slice(0,12);}});
+}
+setInterval(()=>{
+  if(!room||document.hidden||!peers().length||!host())return;
+  const now=Date.now();if(now-lastAg<slow)return;lastAg=now;
+  try{room.emit('ag',{h:ID,a:AG.concat([OB]).map(a=>[a.id,+a.x.toFixed(2),+a.y.toFixed(2),a.state,a.act,a.loc]),n:EVT.all().map(n=>[n.id,n.on?1:0,+n.x.toFixed(2),+n.y.toFixed(2),n.state])}).then(()=>{slow=Math.max(350,slow-20);},()=>{slow=Math.min(3000,slow*2);});}catch(e){}
+},150);
+setInterval(scan,2000);
+setInterval(()=>{const lv=document.querySelector('.bar .live');if(!lv)return;const n=peers().length,m=n&&!host();
+  lv.title=!room?'Sinkron antar device: hanya aktif di halaman artifact yang dipublikasikan':n?(host()?'HOST':'MIRROR')+' · '+(n+1)+' device tersinkron':'Sinkron aktif · menunggu device lain';
+  lv.style.background=m?'#45bdd0':'';lv.style.boxShadow=m?'0 0 8px #45bdd0':'';},1500);
+(async()=>{
+  try{const c=window.claude;if(!c||!c.use)return;[db,room]=await Promise.all([c.use('db').catch(()=>null),c.use('room').catch(()=>null)]);}catch(e){return;}
+  if(room){
+    room.presence({id:ID,v:vis()}).catch(()=>{});
+    addEventListener('visibilitychange',()=>room.presence({v:vis()}).catch(()=>{}));
+    room.on('ag',m=>{const d=m.data;if(m.guest||!fromHost(d)||!Array.isArray(d.a))return;net={t:Date.now(),a:d.a,n:Array.isArray(d.n)?d.n:[]};});
+    room.on('chat',m=>{const d=m.data;if(m.guest||!fromHost(d))return;const a=d.i==='ob'?OB:byId(d.i),tx=String(d.t||'').slice(0,500);if(!a||a.id==='boss'||!tx)return;
+      inNet=true;try{if(d.k)a.bubble={text:tx.length>34?tx.slice(0,32)+'…':tx,ttl:4};else if(d.s)_add(a,tx,String(d.s),Date.now(),false);else _spk(a,tx,Date.now(),false);}finally{inNet=false;}});
+    room.on('evt',m=>{const d=m.data;if(m.guest||!d||typeof d.t!=='string')return;try{EVT.fire(d.t,+d.s||0,true);}catch(e){}});
+    room.on('cmd',m=>{const d=m.data;if(m.guest||m.kind!=='viewer'||!d||typeof d.t!=='string'||!host())return;const t=d.t.slice(0,300);if(!handleCmd(t))respond(t);});
+  }
+  if(db)for(const k in DOCS)db.doc('office/'+k).onSnapshot(s=>{
+    if(s.metadata.fromCache&&!s.exists)return;
+    const first=!live[k];
+    if(s.exists){const d=JSON.parse(JSON.stringify(s.data()));if(d.by!==ID){scan();DOCS[k].use(d,first);}const c=Object.assign({},d);delete c.by;delete c.rev;last[k]=canon(c);}
+    live[k]=true;
+  },()=>{});
+})();
+return {host,sync:mirror,ev:(t,s)=>{if(room&&peers().length)emit('evt',{t,s});},
+  fwd:txt=>{if(!room||host()||!peers().length)return false;return emit('cmd',{t:String(txt).slice(0,300)});}};
+})();
+
 /* ---------- DUNIA KANTOR: cuaca nyata di jendela, tugas rutin, laporan harian, ekspor/impor ---------- */
 var WLD=(()=>{
 const WK='agentOffice.world.v1',H=EVT.H;
@@ -5515,7 +5614,7 @@ function cmd(txt){
   return false;
 }
 
-EVT.hook((t,s)=>{if(MPo)MPo.ev(t,s);});
+EVT.hook((t,s)=>{if(MPo)MPo.ev(t,s);if(SYNCo)SYNCo.ev(t,s);});
 {let wp=false;setInterval(()=>{const p=!!prayerAt(Date.now());if(p&&!wp&&MPo)MPo.pray();if(!p&&wp&&MPo)MPo.unpray();wp=p;},2000);}
 setTimeout(()=>locate().then(load),3000);setInterval(load,15*60000);setTimeout(chk,5000);setInterval(chk,30000);
 return {cmd,sky,score:(id,s)=>{(C.scores=C.scores||[]).push({t:Date.now(),id,s});C.scores=C.scores.slice(-200);sv();}};
@@ -5582,7 +5681,7 @@ function frame(ts){
   update(dt);
   if(MPo)MPo.tick(dt);
   if(EVT)EVT.tick(dt);
-  if(MPo)MPo.sync();
+  if(MPo)MPo.sync();if(SYNCo)SYNCo.sync();
   render(ts/1000);
   acc+=dt;if(acc>.4){acc=0;syncRoster();syncPhase();syncRooms();}
   syncTip();
