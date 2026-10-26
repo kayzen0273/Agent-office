@@ -5363,7 +5363,7 @@ var SYNCo=(()=>{
 const ID=Math.random().toString(16).slice(2,12),num=(v,a,b,d)=>{v=Number(v);return isFinite(v)?Math.max(a,Math.min(b,v)):d;};
 let db=null,room=null,net=null,inNet=false,slow=400,lastAg=0,scanT=0;const live={},busy={},last={};
 const vis=()=>document.hidden?0:1;
-const peers=()=>{try{return room?room.peers().filter(p=>!p.isMe&&!p.guest&&p.presence&&p.presence.id):[];}catch(e){return [];}};
+const peers=()=>{try{return room?room.peers().filter(p=>!p.sameTab&&!p.guest&&p.presence&&p.presence.id):[];}catch(e){return [];}};
 const hostId=()=>{const c=[{id:ID,v:vis()}].concat(peers().map(p=>({id:String(p.presence.id),v:p.presence.v})));const v=c.filter(x=>x.v);return (v.length?v:c).map(x=>x.id).sort()[0];};
 const host=()=>hostId()===ID;
 const fromHost=d=>!!d&&typeof d==='object'&&d.h===hostId()&&d.h!==ID;
@@ -5414,23 +5414,39 @@ function scan(){
     db.doc('office/'+k).set(Object.assign(c,{by:ID,rev:Date.now()})).catch(()=>{live[k]=false;}).finally(()=>{busy[k]=0;});
   }
 }
-/* dunia: host menyiarkan posisi, aktivitas, dan kejadian agen; mirror menirunya */
-function mirror(){
-  if(!net||!room||host()||Date.now()-net.t>2500||prayerAt(Date.now()))return;
-  net.a.forEach(r=>{
-    if(!Array.isArray(r))return;const a=r[0]==='ob'?OB:byId(r[0]);if(!a)return;
-    const tx=num(r[1],-2,45,a.x),ty=num(r[2],-2,45,a.y);
-    if(Math.hypot(tx-a.x,ty-a.y)>4){a.x=tx;a.y=ty;}else{a.x+=(tx-a.x)*.3;a.y+=(ty-a.y)*.3;}
-    a.state=String(r[3]).slice(0,12);a.act=String(r[4]||'').slice(0,80);a.loc=String(r[5]||'work').slice(0,12);
-  });
-  EVT.all().forEach(n=>{const r=net.n.find(q=>q&&q[0]===n.id);if(r){n.on=!!r[1];n.x=num(r[2],-2,45,n.x);n.y=num(r[3],-2,45,n.y);n.state=String(r[4]).slice(0,12);}});
-}
-setInterval(()=>{
+/* dunia: host menyiarkan snapshot lewat presence (10x/detik); mirror MENIMPA posisi lokal, tanpa campuran */
+const FLD=['state','act','loc','dest','pr','pose','garb','wud','back'];
+let buf=[],lastRef=null;
+const snapOf=a=>{const r={i:a.id,x:+a.x.toFixed(3),y:+a.y.toFixed(3)};FLD.forEach(f=>{const v=a[f];if(v!==undefined&&typeof v!=='function')r[f]=f==='act'&&typeof v==='string'?v.slice(0,48):v;});r.au=a.auto&&a.auto.text?String(a.auto.text).slice(0,48):null;return r;};
+function publish(){
   if(!room||document.hidden||!peers().length||!host())return;
-  const now=Date.now();if(now-lastAg<slow)return;lastAg=now;
-  try{room.emit('ag',{h:ID,a:AG.concat([OB]).map(a=>[a.id,+a.x.toFixed(2),+a.y.toFixed(2),a.state,a.act,a.loc]),n:EVT.all().map(n=>[n.id,n.on?1:0,+n.x.toFixed(2),+n.y.toFixed(2),n.state])}).then(()=>{slow=Math.max(350,slow-20);},()=>{slow=Math.min(3000,slow*2);});}catch(e){}
-},150);
+  let ag={t:Date.now(),a:AG.concat([OB]).map(snapOf),n:EVT.all().map(n=>[n.id,n.on?1:0,+n.x.toFixed(2),+n.y.toFixed(2),n.state])};
+  if(JSON.stringify(ag).length>3400)ag.a.forEach(r=>{delete r.act;delete r.au;});
+  try{room.presence({id:ID,v:vis(),ag}).catch(()=>{});}catch(e){}
+}
+const hostPeer=()=>{const h=hostId();return peers().find(p=>String(p.presence.id)===h&&p.presence.ag);};
+function mirror(){
+  if(!room||host())return;
+  const hp=hostPeer();if(!hp)return;
+  const ag=hp.presence.ag;
+  if(ag!==lastRef){lastRef=ag;const m=new Map();(ag.a||[]).forEach(r=>{if(r&&r.i)m.set(r.i,r);});buf.push({at:performance.now(),m,n:ag.n||[]});if(buf.length>6)buf.shift();}
+  if(!buf.length||Date.now()-hp.updatedAt>4000)return;
+  const rt=performance.now()-130;let i=buf.length-1;while(i>0&&buf[i-1].at>rt)i--;
+  const A=buf[Math.max(0,i-1)],B=buf[i],f=A===B?1:Math.max(0,Math.min(1,(rt-A.at)/Math.max(1,B.at-A.at)));
+  AG.concat([OB]).forEach(a=>{
+    const rb=B.m.get(a.id);if(!rb)return;const ra=A.m.get(a.id)||rb;
+    const bx=num(rb.x,-2,45,a.x),by=num(rb.y,-2,45,a.y),ax=num(ra.x,-2,45,bx),ay=num(ra.y,-2,45,by);
+    const jump=Math.hypot(bx-ax,by-ay)>3;
+    a.x=jump?bx:ax+(bx-ax)*f;a.y=jump?by:ay+(by-ay)*f;
+    const src=f>=.5?rb:ra;
+    FLD.forEach(k=>{if(k in src)a[k]=src[k];});
+    if(src.au)a.auto={text:String(src.au)};else if(src.au===null)a.auto=null;
+  });
+  EVT.all().forEach(n=>{const r=B.n.find(q=>q&&q[0]===n.id);if(r){n.on=!!r[1];n.x=num(r[2],-2,45,n.x);n.y=num(r[3],-2,45,n.y);n.state=String(r[4]).slice(0,12);}});
+}
+setInterval(publish,100);
 setInterval(scan,2000);
+setInterval(()=>{if(room&&!host()&&room.peers().some(p=>p.sameTab&&p.presence&&p.presence.ag))room.presence({ag:null}).catch(()=>{});},3000);
 setInterval(()=>{const lv=document.querySelector('.bar .live');if(!lv)return;const n=peers().length,m=n&&!host();
   lv.title=!room?'Sinkron antar device: hanya aktif di halaman artifact yang dipublikasikan':n?(host()?'HOST':'MIRROR')+' · '+(n+1)+' device tersinkron':'Sinkron aktif · menunggu device lain';
   lv.style.background=m?'#45bdd0':'';lv.style.boxShadow=m?'0 0 8px #45bdd0':'';},1500);
@@ -5439,11 +5455,10 @@ setInterval(()=>{const lv=document.querySelector('.bar .live');if(!lv)return;con
   if(room){
     room.presence({id:ID,v:vis()}).catch(()=>{});
     addEventListener('visibilitychange',()=>room.presence({v:vis()}).catch(()=>{}));
-    room.on('ag',m=>{const d=m.data;if(m.guest||!fromHost(d)||!Array.isArray(d.a))return;net={t:Date.now(),a:d.a,n:Array.isArray(d.n)?d.n:[]};});
-    room.on('chat',m=>{const d=m.data;if(m.guest||!fromHost(d))return;const a=d.i==='ob'?OB:byId(d.i),tx=String(d.t||'').slice(0,500);if(!a||a.id==='boss'||!tx)return;
+    room.on('chat',m=>{const d=m.data;if(m.sameTab||m.guest||!fromHost(d))return;const a=d.i==='ob'?OB:byId(d.i),tx=String(d.t||'').slice(0,500);if(!a||a.id==='boss'||!tx)return;
       inNet=true;try{if(d.k)a.bubble={text:tx.length>34?tx.slice(0,32)+'…':tx,ttl:4};else if(d.s)_add(a,tx,String(d.s),Date.now(),false);else _spk(a,tx,Date.now(),false);}finally{inNet=false;}});
-    room.on('evt',m=>{const d=m.data;if(m.guest||!d||typeof d.t!=='string')return;try{EVT.fire(d.t,+d.s||0,true);}catch(e){}});
-    room.on('cmd',m=>{const d=m.data;if(m.guest||m.kind!=='viewer'||!d||typeof d.t!=='string'||!host())return;const t=d.t.slice(0,300);if(!handleCmd(t))respond(t);});
+    room.on('evt',m=>{const d=m.data;if(m.sameTab||m.guest||!d||typeof d.t!=='string')return;try{EVT.fire(d.t,+d.s||0,true);}catch(e){}});
+    room.on('cmd',m=>{const d=m.data;if(m.sameTab||m.guest||m.kind!=='viewer'||!d||typeof d.t!=='string'||!host())return;const t=d.t.slice(0,300);if(!handleCmd(t))respond(t);});
   }
   if(db)for(const k in DOCS)db.doc('office/'+k).onSnapshot(s=>{
     if(s.metadata.fromCache&&!s.exists)return;
