@@ -47,7 +47,7 @@ button.chip:hover{color:var(--text);border-color:#343947}
 .rc b{font-weight:600}
 .rc em{font-style:normal;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
 .rc i{flex:none;width:7px;height:7px;border-radius:2px}
-.tip{position:absolute;z-index:3;min-width:150px;max-width:220px;padding:8px 10px;border-radius:8px;background:#171a22;border:1px solid #303544;box-shadow:0 8px 24px rgba(0,0,0,.45);font-size:12px;pointer-events:none}
+.tip.ctl{pointer-events:auto;min-width:250px}.tip .t1,.tip .t2{display:block;margin-top:2px;color:#c4c9d8}.tip .t2{color:#e6c675;font-size:11px}.tip .trow{display:flex;gap:4px;margin-top:6px}.tip select{flex:1;min-width:0;background:#0e0f14;color:#dde1ea;border:1px solid #303544;border-radius:5px;font:11px var(--ui);padding:3px 2px}.tip button{flex:1;background:#1f4d38;color:#bff3d6;border:1px solid #2f7a58;border-radius:5px;font:600 11px var(--ui);padding:5px;cursor:pointer}.tip button.tfree{background:#2a2d38;color:#c4c9d8;border-color:#3b4050}.tip{position:absolute;z-index:3;min-width:150px;max-width:220px;padding:8px 10px;border-radius:8px;background:#171a22;border:1px solid #303544;box-shadow:0 8px 24px rgba(0,0,0,.45);font-size:12px;pointer-events:none}
 .tip b{display:block;font-size:13px}
 .tip span{color:var(--muted)}
 
@@ -469,6 +469,18 @@ EDGES.push(['kM','k3e'],['k3e','k2s'],['k2s','sdr'],['sdr','sa'],['sa','sb'],['s
 Object.assign(NODES,{kP:[11,22.9],pd:[9.3,22.9],pe:[8.55,25.95],pf:[7.3,25.95],pg:[4.9,25.95],
  G1:[8.5,23.3],G2:[6.2,28.2],G3:[3.0,24.4],G4:[25.4,22.5],G5:[4.7,24.6],G6:[6.3,26.4]});
 EDGES.push(['kM','kP'],['kP','kS'],['kP','pd'],['pd','G1'],['pd','pe'],['pe','pf'],['pf','pg'],['pf','G6'],['pf','G2'],['pg','G5'],['pg','G3'],['sdr','G4']);
+/* ruangan di sisi timur (pintu di dinding x=22, lorong K2 di x=21), ruang CEO, dan masjid */
+Object.assign(NODES,{mjD:[21,13.1],mjI:[23.4,13.1],J1:[25.4,14.6],J2:[28.4,14.6],J3:[25.4,17.6],J4:[28.4,17.6],J5:[30.6,16.1],
+ mkD:[21,8.9],mkI:[23.4,8.9],R1:[25.2,9.9],R2:[27.4,8.4],R3:[29,10.6],
+ sD:[21,2.9],sI:[23.4,2.9],O1:[24.4,4.9],O2:[26.6,4.8],O3:[28.6,4.6],
+ vD:[21,30.9],vI:[23.4,30.9],V1:[25.4,33.4],V2:[27.8,31.0],V3:[29.6,33.6],
+ C1:[14.0,2.4],C2:[18.4,2.6],C3:[17.0,4.0],C4:[13.6,4.4]});
+EDGES.push(['k3e','mjD'],['mjD','mjI'],['mkD','mjD'],['mkD','mkI'],['sD','mkD'],['sD','sI'],['k2s','vD'],['vD','vI']);
+['J1','J2','J3','J4','J5'].forEach(k=>EDGES.push(['mjI',k]));
+['R1','R2','R3'].forEach(k=>EDGES.push(['mkI',k]));
+['O1','O2','O3'].forEach(k=>EDGES.push(['sI',k]));
+['V1','V2','V3'].forEach(k=>EDGES.push(['vI',k]));
+['C1','C2','C3','C4'].forEach(k=>EDGES.push(['ci',k]));
 const ADJ={};
 EDGES.forEach(([p,q])=>{(ADJ[p]=ADJ[p]||[]).push(q);(ADJ[q]=ADJ[q]||[]).push(p);});
 function route(from,to){
@@ -2642,17 +2654,24 @@ function applyCmd(a,now){
   a.loc=inMeetRm(a.x,a.y)?'meet':'work';
 }
 const CMD_ROOMS=[
- {re:/ruang\s*tamu|\btamu\b/,pool:['T1','T2','T3','T4'],label:'ruang tamu',act:'Santai di ruang tamu'},
- {re:/ruang\s*santai|lounge|rebahan|tidur|istirahat|bersantai|santai/,pool:['L1','L2','L3','L4'],label:'ruang santai',act:'Bersantai di ruang santai'},
- {re:/ruang\s*bermain|bermain|main|game|arcade|billiard|biliar|\btv\b|nonton/,pool:['B1','B2','B3','B4'],label:'ruang bermain',act:null},
- {re:/studio/,pool:['M1','M2','M3','M4','M5','M6'],label:'studio konten',act:null},
- {re:/syuting|shooting|rekam|green\s*screen|plaza|set\s*foto|ring\s*light/,pool:['G1','G2','G3','G4','G5','G6'],label:'plaza konten',act:null,shoot:true},
- {re:/ruang\s*rapat|rapat|meeting|briefing/,meet:true,label:'ruang rapat',act:'Menunggu di ruang rapat'},
- {re:/printer|cetak|print\b/,pool:['printer'],label:'printer',act:'Mencetak dokumen'},
- {re:/papan\s*tugas|\bpapan\b|board/,pool:['board'],label:'papan tugas',act:'Mengecek papan tugas'},
- {re:/pintu|paket|resepsi/,pool:['door'],label:'pintu depan',act:'Berjaga di pintu depan'},
- {re:/pantry|ngopi|kopi|\bteh\b|minum|cooler|dispenser|ngeteh|nyemil/,pool:['cooler'],label:'pantry',act:'Ngopi di pantry'},
- {re:/\bmeja\b|mejamu|kursimu|bekerja|\bkerja\b|duduk di kursi/,seat:true,label:'meja kerja',act:null}
+ {key:'ceo',re:/ruang\s*ceo|ruang\s*bos|kantor\s*(?:bos|ceo|pak\s*bos)|\bceo\b/,pool:['C1','C2','C3','C4'],label:'ruang CEO',act:'Menunggu di ruang CEO'},
+ {key:'sosmed',re:/sosmed|sosial\s*media|divisi\s*sosmed/,pool:['O1','O2','O3'],label:'divisi sosmed',act:'Mengecek sosmed di divisi sosmed'},
+ {key:'marketing',re:/marketing|pemasaran/,pool:['R1','R2','R3'],label:'ruang marketing',act:'Diskusi strategi marketing'},
+ {key:'server',re:/server|data\s*center|datacenter/,pool:['V1','V2','V3'],label:'ruang server',act:'Mengecek rak server'},
+ {key:'masjid',re:/masjid|musholla|mushola|musala/,pool:['J1','J2','J3','J4','J5'],label:'masjid',act:'Berdoa di masjid'},
+ {key:'studio',re:/studio/,pool:['M1','M2','M3','M4','M5','M6'],label:'studio konten',act:null},
+ {key:'plaza',re:/syuting|shooting|rekam|green\s*screen|plaza|set\s*foto|ring\s*light/,pool:['G1','G2','G3','G4','G5','G6'],label:'plaza konten',act:null,shoot:true},
+ {key:'rapat',re:/ruang\s*rapat|rapat|meeting|briefing/,meet:true,label:'ruang rapat',act:'Menunggu di ruang rapat'},
+ {key:'tamu',re:/ruang\s*tamu|\btamu\b/,pool:['T1','T2','T3','T4'],label:'ruang tamu',act:'Santai di ruang tamu'},
+ {key:'bermain',re:/ruang\s*bermain|bermain|\bmain\b|game|arcade|billiard|biliar|\btv\b|nonton/,pool:['B1','B2','B3','B4'],label:'ruang bermain',act:null},
+ {key:'santai',re:/ruang\s*santai|lounge|rebahan|tidur|istirahat|bersantai|santai/,pool:['L1','L2','L3','L4'],label:'ruang santai',act:'Bersantai di ruang santai'},
+ {key:'printer',re:/printer|cetak|print\b/,pool:['printer'],label:'printer',act:'Mencetak dokumen'},
+ {key:'papan',re:/papan\s*tugas|\bpapan\b|board/,pool:['board'],label:'papan tugas',act:'Mengecek papan tugas'},
+ {key:'pintu',re:/pintu|paket|resepsi|lobi|lobby/,pool:['door'],label:'pintu depan',act:'Berjaga di pintu depan'},
+ {key:'lorong',re:/lorong|koridor|selasar/,pool:['kM','kT','kS'],label:'lorong',act:'Berdiri di lorong'},
+ {key:'kerja',re:/ruang\s*kerja|area\s*kerja|kantor\b|open\s*space/,pool:['a','b','top'],label:'ruang kerja',act:'Berdiri di ruang kerja'},
+ {key:'pantry',re:/pantry|ngopi|kopi|\bteh\b|minum|cooler|dispenser|ngeteh|nyemil/,pool:['cooler'],label:'pantry',act:'Ngopi di pantry'},
+ {key:'meja',re:/\bmeja\b|mejamu|kursimu|bekerja|\bkerja\b|duduk di kursi/,seat:true,label:'meja kerja',act:null}
 ];
 const CMD_ACTS=[
  {re:/joget|menari|dance|goyang/,act:'Joget-joget dulu',say:['Yuk goyang! 💃','Satu, dua, tiga!','Musiknya mana musik? 🎶']},
@@ -2667,7 +2686,7 @@ const CMD_ACTS=[
 ];
 const CMD_MV=/\b(ke|pergi|ayo|ayok|yuk|ngopi|diam|tetap|stay|tinggal|tunggu|kumpul|jalan|istirahat|santai|main|duduk|berdiri|joget|menari|nyanyi|senam|lompat|jaga|baca|tidur|rebahan|suruh|minta|perintah|silakan|coba|sekarang|dulu|cepat|segera|harus|ambil|bawa|cek|temui|kunjungi|datang|masuk)\b/i;
 const CMD_NO=/\b(buat(?:kan)?|bikin(?:kan)?|desain(?:kan)?|tulis(?:kan)?|analisis|riset|kode|coding|website|landing|poster|logo|gambar(?:kan)?|ringkas|rangkum|jelaskan|terjemah|\/tugas|\/gambar)\b/i;
-const CMD_ACK=['Siap, Bos! ','Laksanakan! ','Oke Bos, ','Siap meluncur! ','Baik, ','Beres, '];
+const CMD_ACK=['Siap, Bos! Menuju ','Laksanakan! Otw ke ','Oke Bos, ke ','Siap meluncur ke ','Baik, saya ke ','Beres, ke '];
 const CMD_BYE=['Sudah selesai, balik dulu ya.','Waktunya habis, lanjut aktivitas lagi!','Oke, balik ke kegiatan semula.'];
 const fmtDur=ms=>{if(ms==null)return 'sampai Anda minta kembali';const s=Math.round(ms/1000);return s>=3600?(Math.round(s/360)/10)+' jam':s>=60?Math.round(s/6)/10+' menit':s+' detik';};
 function parseCmdTargets(txt){
@@ -2720,11 +2739,12 @@ function issueCmd(p,now){
       actTxt=room.shoot?SPOT[d.node]:(room.act||SPOT[d.node]||('Di '+room.label));
       if(p.coffee&&!/pantry/.test(room.label))actTxt='Ngopi di '+room.label;
       if(room.seat)actTxt=a.work[0];
-      if(p.act&&p.act.act!=='Diam di tempat')actTxt=p.act.act+' di '+room.label;else if(p.act)actTxt='Diam di '+room.label;
+      if(p.act&&p.act.gem)actTxt=p.act.act;else if(p.act&&p.act.act!=='Diam di tempat')actTxt=p.act.act+' di '+room.label;else if(p.act)actTxt='Diam di '+room.label;
       if(p.act){say=p.act.say;}
       else if(p.coffee)say=['Seruput… ☕ nikmat.','Kopinya pas banget.','Pantry selalu jadi tempat curhat.'];
     }else{
       /* tanpa tujuan: tinggal di tempat sekarang melakukan aksi */
+      if(!p.act)p.act={act:'Menunggu di tempat',say:null};
       const nd=nearestNode(a.x,a.y);
       d={node:nd,label:'tempat ini',off:[a.x-NODES[nd][0],a.y-NODES[nd][1]]};
       if(a.state==='work'&&!a.pr){d={node:'s'+a.desk,seat:1,label:'meja'};}
@@ -2740,8 +2760,31 @@ function releaseCmd(tg,now){
   let n=0;tg.forEach(a=>{const c=a._cmd;if(c&&c.ph!=='ret'){c.ph='ret';c.w=null;c.rq=null;n++;a.bubble={text:'Oke, balik kerja!',ttl:3};}});
   return n;
 }
+const CMD_FB=/\b(ke|pergi|pindah|datang|jalan|menuju|masuk|keluar|temui|kunjungi|kumpul|diam|tetap|berdiri|duduk|suruh|ayo|yuk|stay|tunggu|jaga)\b/i;
+/* kalimat perintah yang tidak dikenali kamus: Gemini memetakannya ke ruangan dan aksi */
+async function geminiCmd(txt,tg){
+  const keys=CMD_ROOMS.map(r=>r.key+' ('+r.label+')').join(', ');
+  const prompt='Kamu penerjemah perintah untuk simulasi kantor. Bos memerintah: "'+txt+'"\nTentukan tempat tujuan dari daftar kunci: '+keys+'. Jika tidak ada tempat yang cocok isi null. Tentukan aksi singkat yang dilakukan (maks 6 kata, bahasa Indonesia), satu kalimat pendek yang diucapkan agen (maks 10 kata), dan durasi dalam detik (angka; jika Bos tidak menyebut, perkirakan wajar 60 sampai 300; jika sampai disuruh kembali isi 0). Jawab HANYA JSON: {"room":"kunci atau null","act":"aksi","say":"ucapan","dur":angka}';
+  const out=await gOnce(tg[0],prompt,false,null,GFALL[0]);
+  const m=(out.text||'').match(/\{[\s\S]*\}/);if(!m)return null;
+  const j=JSON.parse(m[0]),room=CMD_ROOMS.find(r=>r.key===j.room)||null;
+  if(!room&&!j.act)return null;
+  const dur=j.dur===0?null:Math.min(Math.max(+j.dur||120,10),8*3600)*1000;
+  return {tg,room,act:j.act?{gem:1,act:String(j.act).slice(0,60),say:j.say?[String(j.say).slice(0,80)]:null}:null,coffee:false,dur,raw:txt};
+}
 function handleCmd(txt){
-  const p=parseCmd(txt);if(!p)return false;
+  let p=parseCmd(txt);
+  if(!p){
+    const s=txt.toLowerCase(),tg=parseCmdTargets(txt);
+    if(!tg.length||CMD_NO.test(s)||/\?\s*$/.test(txt)||s.length>140||!CMD_FB.test(s))return false;
+    if(!GM.key){addMsg(boss,'Tempat atau aksi itu belum saya kenal. Coba sebut salah satu: ruang CEO, ruang kerja, ruang rapat, ruang tamu, ruang santai, ruang bermain, studio konten, plaza konten, sosmed, marketing, masjid, ruang server, pantry, lorong. Dengan Gemini terhubung, perintah bebas lainnya juga bisa dimengerti.','hint');return true;}
+    tg[0].bubble={text:'Hmm, paham…',ttl:2};
+    geminiCmd(txt,tg).then(r=>{if(!r){addMsg(boss,'Perintah itu belum bisa saya petakan ke tempat atau aksi di kantor.','hint');return;}runCmd(r);}).catch(e=>addMsg(boss,'Gagal memahami perintah lewat Gemini: '+((e&&e.message)||'error'),'hint'));
+    return true;
+  }
+  return runCmd(p);
+}
+function runCmd(p){
   const now=Date.now();
   if(p.rel){
     const n=releaseCmd(p.tg,now);
@@ -2754,7 +2797,7 @@ function handleCmd(txt){
   addMsg(boss,`Perintah: ${ag.map(a=>a.name).join(', ')} → ${p.room?where:what}${p.room&&p.act?' ('+what+')':''}, selama ${fmtDur(p.dur)}.`,'sys');
   /* agen menjawab lewat chat dan gelembung; yang banyak hanya tiga yang menjawab lewat chat */
   ag.forEach((a,i)=>{
-    const ack=pick(CMD_ACK)+(p.room?`ke ${p.room.label}`+(p.coffee&&p.room.label!=='pantry'?' sambil ngopi':'')+'.':p.act.act.toLowerCase()+'.');
+    const ack=(p.room?pick(CMD_ACK):pick(['Siap, Bos! ','Laksanakan! ','Oke Bos, ','Baik, ']))+(p.room?`${p.room.label}`+(p.coffee&&p.room.label!=='pantry'?' sambil ngopi':'')+'.':p.act.act.toLowerCase()+'.');
     if(i<3)setTimeout(()=>speak(a,ack,Date.now(),true),350+i*450+rnd()*300);
     else a.bubble={text:ack.slice(0,34),ttl:3.5};
   });
@@ -4441,7 +4484,7 @@ $('#form').addEventListener('submit',e=>{
   inp.value='';
   addMsg(boss,txt,'',Date.now(),true);beep();
   if(MPo&&!/^[\/@]/.test(txt))MPo.say(txt);
-  if(/^\/help$/i.test(txt)){addMsg(boss,'Perintah:\n/skill membuka pengelola skill (unggah SKILL.md atau zip)\n/gambar <deskripsi> membuat gambar atau foto (butuh Gemini)\n/tugas <perintah> memberi tugas ke seluruh tim (Einstein, DeepSeek, Doraemon bekerja bersama). Agen mengajukan rencana (dan usulan yang lebih berguna bila ada), dikerjakan setelah Anda setujui; hasilnya muncul di chat dan tombol HASIL\n@Einstein, @DeepSeek, @Doraemon bicara langsung\nPERINTAH LANGSUNG (bukan tugas): contoh "@Naruto ngopi dulu", "Yukina diam di ruang santai 10 menit", "semua ke ruang rapat", "@BananaCat joget 30 detik", "semua kumpul di ruang bermain sampai aku bilang", "bubar" untuk membatalkan\n/gemini pengaturan API key\n/hasil riwayat hasil\n/reset hapus ingatan percakapan agen\n/obrolan on|off obrolan antar-agen ditulis Gemini (panjang dan selalu baru)\n/status papan tugas\n/adzan reset hapus file adzan\nPesan biasa hanya obrolan atau perintah langsung. Pekerjaan wajib lewat /tugas atau /gambar.\nShift+Enter untuk baris baru.','hint');return;}
+  if(/^\/help$/i.test(txt)){addMsg(boss,'Perintah:\n/skill membuka pengelola skill (unggah SKILL.md atau zip)\n/gambar <deskripsi> membuat gambar atau foto (butuh Gemini)\n/tugas <perintah> memberi tugas ke seluruh tim (Einstein, DeepSeek, Doraemon bekerja bersama). Agen mengajukan rencana (dan usulan yang lebih berguna bila ada), dikerjakan setelah Anda setujui; hasilnya muncul di chat dan tombol HASIL\n@Einstein, @DeepSeek, @Doraemon bicara langsung\nPERINTAH LANGSUNG (bukan tugas), bisa ke ruang CEO, kerja, rapat, tamu, santai, bermain, studio, plaza, sosmed, marketing, masjid, server, pantry, lorong: contoh "@Naruto ngopi dulu", "Yukina diam di ruang santai 10 menit", "semua ke ruang rapat", "@BananaCat joget 30 detik", "semua kumpul di ruang bermain sampai aku bilang", "bubar" untuk membatalkan\n/gemini pengaturan API key\n/hasil riwayat hasil\n/reset hapus ingatan percakapan agen\n/obrolan on|off obrolan antar-agen ditulis Gemini (panjang dan selalu baru)\n/status papan tugas\n/adzan reset hapus file adzan\nPesan biasa hanya obrolan atau perintah langsung. Pekerjaan wajib lewat /tugas atau /gambar.\nShift+Enter untuk baris baru.','hint');return;}
   if(/^\/gemini$/i.test(txt)){openSet();return;}
   if(/^\/hasil$/i.test(txt)){openList();return;}
   if(/^\/supabase$/i.test(txt)){sbOpen();return;}
@@ -4494,16 +4537,45 @@ cv.addEventListener('pointerdown',e=>{
   tipFor=hit&&tipFor!==hit?hit:null;
   if(!tipFor)tip.hidden=true;
 });
+/* kartu agen: klik agen untuk melihat status dan langsung menyuruhnya (ruangan + aksi + durasi) */
+const DUR_OPT=[['1 menit',60],['5 menit',300],['15 menit',900],['30 menit',1800],['1 jam',3600],['Sampai dibebaskan',0]];
+function buildTip(a){
+  tip.replaceChildren();tip._for=a;
+  const b=document.createElement('b');b.style.color=a.color;b.textContent=a.name;
+  const s1=document.createElement('span');s1.className='t1';
+  const s2=document.createElement('span');s2.className='t2';
+  tip.append(b,s1,s2);
+  if(a===OB||a.human){tip.classList.remove('ctl');return;}
+  tip.classList.add('ctl');
+  const mk=(opts,cur)=>{const e=document.createElement('select');opts.forEach(([l,v])=>{const o=document.createElement('option');o.textContent=l;o.value=v;e.append(o);});if(cur!=null)e.value=cur;return e;};
+  const room=mk([['Di tempat saja','']].concat(CMD_ROOMS.map(r=>[r.label[0].toUpperCase()+r.label.slice(1),r.key])));
+  const act=mk([['Tanpa aksi','']].concat(CMD_ACTS.map((x,i)=>[x.act,i])));
+  const dur=mk(DUR_OPT.map(([l,v])=>[l,v]),300);
+  const go=document.createElement('button');go.type='button';go.className='tgo';go.textContent='Suruh';
+  const free=document.createElement('button');free.type='button';free.className='tfree';free.textContent='Bebaskan';
+  go.addEventListener('click',()=>{
+    const r=CMD_ROOMS.find(x=>x.key===room.value)||null,ac=act.value===''?null:CMD_ACTS[+act.value];
+    if(!r&&!ac){addMsg(boss,'Pilih ruangan atau aksi dulu untuk '+a.name+'.','hint');return;}
+    const d=+dur.value;
+    runCmd({tg:[a],room:r,act:ac,coffee:!!r&&r.key==='pantry',dur:d?d*1000:null,raw:''});
+  });
+  free.addEventListener('click',()=>{const n=releaseCmd([a],Date.now());addMsg(boss,n?a.name+' dibebaskan dan kembali ke aktivitas semula.':a.name+' sedang tidak menjalankan perintah khusus.','sys');});
+  const row0=document.createElement('div');row0.className='trow';row0.append(room);
+  const row=document.createElement('div');row.className='trow';row.append(act,dur);
+  const row2=document.createElement('div');row2.className='trow';row2.append(go,free);
+  tip.append(row0,row,row2);
+}
 function syncTip(){
   if(!tipFor)return;
   tip.hidden=false;
-  tip.innerHTML='';
-  const b=document.createElement('b');b.textContent=tipFor.name;b.style.color=tipFor.color;
-  const s1=document.createElement('span');s1.textContent=tipFor.role+' · '+actText(tipFor);
-  tip.append(b,s1);
-  const w=tip.offsetWidth;
+  if(tip._for!==tipFor)buildTip(tipFor);
+  tip.querySelector('.t1').textContent=tipFor.role+' · '+actText(tipFor);
+  const c=tipFor._cmd,t2=tip.querySelector('.t2');
+  t2.textContent=c?(c.ph==='go'?'Perintah: menuju '+c.d.label:c.ph==='ret'?'Perintah selesai, kembali':'Perintah: '+c.act+(c.until===Infinity?' (sampai dibebaskan)':' · sisa '+fmtDur(Math.max(0,c.until-Date.now())))):'';
+  t2.style.display=c?'':'none';
+  const w=tip.offsetWidth,h=tip.offsetHeight;
   tip.style.left=Math.max(6,Math.min(CW-w-6,tipFor._sx-w/2))+'px';
-  tip.style.top=Math.max(6,tipFor._sy-70)+'px';
+  tip.style.top=Math.max(6,tipFor._sy-h-26)+'px';
 }
 
 /* ---------- aliran kejadian (ditentukan oleh jam dinding) ---------- */
