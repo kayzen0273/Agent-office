@@ -248,6 +248,7 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
    <span class="brand">Agent Office</span>
    <button class="chip" id="adzanbtn" type="button" title="Pilih file audio adzan dari perangkat">ADZAN</button><input type="file" id="adzanfile" accept="audio/*" hidden><button class="chip" id="sholat" type="button" title="Demo waktu sholat">SHOLAT</button>
    <button class="chip" id="mpbtn" type="button" title="Mode tamu: masuk kantor bersama pengguna lain"><i id="mpdot" style="background:#5c6272"></i>TAMU</button>
+   <button class="chip" id="tkbtn" type="button" title="Papan tugas: antri, dikerjakan, selesai">TUGAS <b id="tkn">0</b></button>
    <button class="chip" id="evbtn" type="button" title="Picu kejadian acak: pizza datang, listrik padam, atau tamu penting">KEJADIAN</button><button class="chip" id="mode" type="button" aria-label="Mode waktu">AUTO</button>
    <span class="chip"><i id="pdot"></i><span id="plabel">DAWN</span></span>
   </header>
@@ -365,6 +366,27 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
  </div>
 </div>
 
+<style>
+.kb{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media(max-width:700px){.kb{grid-template-columns:1fr}}
+.kc{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:8px;min-height:120px}
+.kc h3{margin:0 0 8px;font:9px var(--pixel);letter-spacing:.14em;color:var(--muted);display:flex;justify-content:space-between;gap:6px}
+.kk{background:#0f1116;border:1px solid var(--line);border-radius:6px;padding:7px 8px;margin-bottom:6px;font-size:12px;overflow-wrap:anywhere}
+.kk .o{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:11px;color:var(--muted)}
+.kk .o i{width:7px;height:7px;border-radius:2px;flex:none}
+.kp{height:4px;border-radius:2px;background:#252935;margin-top:6px;overflow:hidden}
+.kp b{display:block;height:100%;background:var(--ok)}
+.kp.ind b{width:35%;animation:kind 1.2s linear infinite}
+@keyframes kind{from{transform:translateX(-100%)}to{transform:translateX(300%)}}
+@media(prefers-reduced-motion:reduce){.kp.ind b{animation:none}}
+.ke{color:var(--dim);font-size:11px;padding:6px 2px}
+</style>
+<div class="ov" id="gtk" hidden>
+ <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="tkt">
+  <div class="dh"><h2 id="tkt">Papan tugas</h2><button class="mini" type="button" data-x>Tutup</button></div>
+  <div class="db"><div class="kb" id="kb"></div></div>
+ </div>
+</div>
 <script>
 (()=>{
 'use strict';
@@ -999,6 +1021,7 @@ function overlayTags(){
     ctx.beginPath();if(ctx.roundRect)ctx.roundRect(l+.5,tp+.5,w-1,th-1,th/2);else ctx.rect(l+.5,tp+.5,w-1,th-1);ctx.stroke();ctx.globalAlpha=1;
     ctx.fillStyle=a.color;ctx.beginPath();ctx.arc(l+padX*.8+dot,y,dot,0,7);ctx.fill();
     ctx.fillStyle='#f1f3f8';ctx.textAlign='left';ctx.fillText(a.name,l+padX*.8+dot*2+gap,y+fs*.04);ctx.textAlign='center';
+    if(a._tp!=null){const bw=w-th,bx0=l+th/2,by=tp+th-fs*.34;ctx.fillStyle='rgba(255,255,255,.14)';ctx.fillRect(bx0,by,bw,fs*.16);ctx.fillStyle=a.color;ctx.fillRect(bx0,by,bw*Math.max(.04,Math.min(1,a._tp)),fs*.16);}
     const bb=a.bubble||a.auto;
     if(bb){
       const txt=bb.text,bf=Math.max(10,8*S0*1.25+3.5);
@@ -2000,7 +2023,9 @@ QP.push([23.7,14.1],[23.7,14.9],[23.7,15.7]);/* antrean wudhu lebih panjang kare
 const PT=[['Subuh',4,25,2],['Dzuhur',11,50,4],['Ashar',15,10,4],['Maghrib',17,50,3],['Isya',19,0,4]];
 /* jadwal sholat real-time: dihitung dari koordinat + tanggal (metode Kemenag RI: Subuh -20, Isya -18, Ashar mazhab Syafii, ihtiyati +2 menit). Tanpa jaringan. Jum'at: Dzuhur diganti sholat Jum'at (2 rakaat, 2 adzan, khutbah) */
 var JSENT={},PTC={k:'',v:null};
-function ptFor(d){
+var PAP={};
+function ptFor(d){const L=window.PLOC||{lat:-7.4244,lon:109.2302};return PAP[d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate()+'|'+(+L.lat).toFixed(2)+'|'+(+L.lon).toFixed(2)]||ptCalc(d);}
+function ptCalc(d){
   const L=window.PLOC||{lat:-7.4244,lon:109.2302},k=d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate()+'|'+(+L.lat).toFixed(2)+'|'+(+L.lon).toFixed(2);
   if(PTC.k===k)return PTC.v;
   let v=PT;
@@ -2013,7 +2038,7 @@ function ptFor(d){
     const noon=12+tz-lon/15-eq;
     const ha=a=>Math.acos(Math.max(-1,Math.min(1,(s(a)-s(lat)*s(dec))/(c(lat)*c(dec)))))/R/15;
     const asr=Math.atan(1/(1+Math.tan(Math.abs(lat-dec)*R)))/R;
-    const mk=(n,t,rk,j)=>{const m=Math.ceil(t*60+2);return [n,Math.floor(m/60)%24,m%60,rk,j];};
+    const mk=(n,t,rk,j)=>{const m=((Math.ceil(t*60+2)%1440)+1440)%1440;return [n,Math.floor(m/60)%24,m%60,rk,j];};
     const fri=d.getDay()===5;
     v=[mk('Subuh',noon-ha(-20),2),fri?mk("Jum'at",noon,2,1):mk('Dzuhur',noon,4),mk('Ashar',noon+ha(asr),4),mk('Maghrib',noon+ha(-.833),3),mk('Isya',noon+ha(-18),4)];
     if(v.some(x=>!isFinite(x[1])||!isFinite(x[2])))v=PT;
@@ -4525,6 +4550,7 @@ $('#form').addEventListener('submit',e=>{
   inp.value='';
   addMsg(boss,txt,'',Date.now(),true);beep();
   if(MPo&&!/^[\/@]/.test(txt))MPo.say(txt);
+  if(typeof FIT!=='undefined'&&FIT.cmd(txt))return;
   if(typeof WLD!=='undefined'&&WLD.cmd(txt))return;
   if(/^\/help$/i.test(txt)){addMsg(boss,'Perintah:\n/skill membuka pengelola skill (unggah SKILL.md atau zip)\n/gambar <deskripsi> membuat gambar atau foto (butuh Gemini)\n/tugas <perintah> memberi tugas ke seluruh tim (Einstein, DeepSeek, Doraemon bekerja bersama). Agen mengajukan rencana (dan usulan yang lebih berguna bila ada), dikerjakan setelah Anda setujui; hasilnya muncul di chat dan tombol HASIL\n@Einstein, @DeepSeek, @Doraemon bicara langsung\nPERINTAH LANGSUNG (bukan tugas), bisa ke ruang CEO, kerja, rapat, tamu, santai, bermain, studio, plaza, sosmed, marketing, masjid, server, pantry, lorong: contoh "@Naruto ngopi dulu", "Yukina diam di ruang santai 10 menit", "semua ke ruang rapat", "@BananaCat joget 30 detik", "semua kumpul di ruang bermain sampai aku bilang", "bubar" untuk membatalkan\n/gemini pengaturan API key\n/hasil riwayat hasil\n/kejadian pizza|listrik|tamu|acak|on|off kejadian acak di kantor (muncul sendiri setiap beberapa menit)\n/reset hapus ingatan percakapan agen\n/obrolan on|off obrolan antar-agen ditulis Gemini (panjang dan selalu baru)\n/status papan tugas\n/adzan reset hapus file adzan\nPesan biasa hanya obrolan atau perintah langsung. Pekerjaan wajib lewat /tugas atau /gambar.\nShift+Enter untuk baris baru.','hint');return;}
   if(/^\/gemini$/i.test(txt)){openSet();return;}
@@ -4694,10 +4720,7 @@ setInterval(()=>{
   lastT=now;
 },1000);
 const DEMOS=[['Subuh',2],['Dzuhur',4],["Jum'at",2,1],['Ashar',4],['Maghrib',3],['Isya',4]];
-let di=0;$('#sholat').title='Klik: tampilkan jadwal hari ini dan demo sholat (berulang: Subuh, Dzuhur, Jum\u2019at, Ashar, Maghrib, Isya)';
-$('#sholat').addEventListener('click',()=>{const q=DEMOS[di++%DEMOS.length];demo={t0:Date.now(),name:q[0],rk:q[1],jum:q[2]};
-  const L=window.PLOC||{},tt=ptFor(new Date()).map(x=>x[0]+' '+String(x[1]).padStart(2,'0')+':'+String(x[2]).padStart(2,'0')).join(' · ');
-  addMsg(boss,'Jadwal hari ini'+(L.city?' ('+L.city+')':'')+': '+tt+'. Demo: '+q[0]+'.','sys',Date.now());});
+let di=0;
 
 
 /* ---------- KEJADIAN ACAK: pizza datang, listrik padam, tamu penting ---------- */
@@ -5633,6 +5656,187 @@ EVT.hook((t,s)=>{if(MPo)MPo.ev(t,s);if(SYNCo)SYNCo.ev(t,s);});
 {let wp=false;setInterval(()=>{const p=!!prayerAt(Date.now());if(p&&!wp&&MPo)MPo.pray();if(!p&&wp&&MPo)MPo.unpray();wp=p;},2000);}
 setTimeout(()=>locate().then(load),3000);setInterval(load,15*60000);setTimeout(chk,5000);setInterval(chk,30000);
 return {cmd,sky,score:(id,s)=>{(C.scores=C.scores||[]).push({t:Date.now(),id,s});C.scores=C.scores.slice(-200);sv();}};
+})();
+
+/* ---------- FITUR BARU: jadwal sholat real (API), papan tugas Kanban, rapat antar-agen ---------- */
+var FIT=(()=>{
+const sys=(t,k)=>addMsg(boss,t,k||'sys',Date.now(),false);
+const p2=n=>String(n).padStart(2,'0');
+const pk=d=>{const L=window.PLOC||{lat:-7.4244,lon:109.2302};return d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate()+'|'+(+L.lat).toFixed(2)+'|'+(+L.lon).toFixed(2);};
+
+/* 1. SHOLAT: ambil jadwal dari Aladhan (metode Kemenag RI), cadangan hitungan lokal */
+let fetching='';
+async function loadPT(){
+  const d=new Date(),k=pk(d);
+  if(PAP[k]||fetching===k)return;
+  fetching=k;
+  const L=window.PLOC||{lat:-7.4244,lon:109.2302};
+  try{
+    const j=await (await fetch('https://api.aladhan.com/v1/timings/'+p2(d.getDate())+'-'+p2(d.getMonth()+1)+'-'+d.getFullYear()+'?latitude='+L.lat+'&longitude='+L.lon+'&method=20')).json();
+    const T=j&&j.data&&j.data.timings;if(!T)throw 0;
+    const g=s=>{const m=/(\d{1,2}):(\d{2})/.exec(s||'');return m?(+m[1])*60+(+m[2])+2:NaN;};
+    const mk=(n,s,rk,jm)=>{const m=g(s);return [n,Math.floor(m/60)%24,m%60,rk,jm];};
+    const fri=d.getDay()===5;
+    const v=[mk('Subuh',T.Fajr,2),fri?mk("Jum'at",T.Dhuhr,2,1):mk('Dzuhur',T.Dhuhr,4),mk('Ashar',T.Asr,4),mk('Maghrib',T.Maghrib,3),mk('Isya',T.Isha,4)];
+    const c=ptCalc(d);
+    if(v.some((x,i)=>!isFinite(x[1])||!isFinite(x[2])||Math.abs(x[1]*60+x[2]-(c[i][1]*60+c[i][2]))>20))throw 0;
+    PAP[k]=v;tick();
+  }catch(e){}finally{fetching='';}
+}
+function nextP(){
+  const now=new Date(),nm=now.getHours()*60+now.getMinutes()+now.getSeconds()/60;
+  const x=ptFor(now).find(q=>q[1]*60+q[2]>nm);
+  if(x)return {n:x[0],h:x[1],m:x[2],d:x[1]*60+x[2]-nm};
+  const w=ptFor(new Date(now.getTime()+864e5))[0];
+  return {n:w[0],h:w[1],m:w[2],d:1440-nm+w[1]*60+w[2]};
+}
+const fmtR=m=>{m=Math.max(0,Math.ceil(m));return m>=60?Math.floor(m/60)+'j '+(m%60)+'m':m+'m';};
+function tick(){
+  const b=$('#sholat');if(!b)return;
+  let pr=null;try{pr=prayerAt(Date.now());}catch(e){}
+  if(pr){b.textContent='SEDANG '+String(pr.name).toUpperCase();return;}
+  const x=nextP();
+  b.textContent=x.n+' '+p2(x.h)+':'+p2(x.m)+' · '+fmtR(x.d);
+  b.title='Sholat berikutnya: '+x.n+' pukul '+p2(x.h)+':'+p2(x.m)+'. Klik untuk melihat jadwal hari ini.';
+}
+function jadwal(){
+  const L=window.PLOC||{},d=new Date(),x=nextP();
+  const tt=ptFor(d).map(q=>q[0]+' '+p2(q[1])+':'+p2(q[2])).join(' · ');
+  sys('Jadwal sholat hari ini'+(L.city?' ('+L.city+')':'')+': '+tt+'.\nBerikutnya: '+x.n+' '+p2(x.h)+':'+p2(x.m)+' ('+fmtR(x.d)+' lagi). Sumber: '+(PAP[pk(d)]?'Aladhan, metode Kemenag RI':'hitungan lokal, metode Kemenag RI')+'. Ganti kota dengan /cuaca <kota>. Tes tampilan sholat: /sholat demo.');
+}
+function demoP(){
+  const q=DEMOS[di++%DEMOS.length];
+  demo={t0:Date.now(),name:q[0],rk:q[1],jum:q[2]};
+  sys('Demo sholat: '+q[0]+'.');
+}
+
+/* 2. PAPAN TUGAS: Antri, Dikerjakan, Selesai + bar progres di atas kepala agen */
+const COLS=['ANTRI','DIKERJAKAN','SELESAI (10 MENIT TERAKHIR)'];
+function board(){
+  const now=Date.now();refreshTasks(now);
+  const sim={};
+  if(!LIVE())try{tasksBetween(now-600000,now).forEach(k=>{sim[k.id]=k;});}catch(e){}
+  return tasks.map(k=>{
+    const s=sim[k.id];let p=null;
+    if(k.col===1&&s)p=Math.max(.05,Math.min(.97,(now-s.pickAt)/(s.doneAt-s.pickAt)));
+    return {id:k.id,text:k.text,col:k.col,owner:k.owner,p};
+  });
+}
+function paintKB(items){
+  const kb=$('#kb');if(!kb)return;
+  kb.replaceChildren();
+  [0,1,2].forEach(c=>{
+    const col=document.createElement('div');col.className='kc';
+    const its=items.filter(k=>k.col===c);
+    const h=document.createElement('h3'),n=document.createElement('span');
+    h.append(document.createTextNode(COLS[c]));n.textContent=its.length;h.append(n);col.append(h);
+    if(!its.length){const e=document.createElement('div');e.className='ke';e.textContent='Kosong';col.append(e);}
+    its.forEach(k=>{
+      const el=document.createElement('div');el.className='kk';
+      const tx=document.createElement('div');tx.textContent=k.text;el.append(tx);
+      const a=k.owner&&byId(k.owner);
+      if(a){const o=document.createElement('div'),i=document.createElement('i');o.className='o';i.style.background=a.color;o.append(i,document.createTextNode(a.name));el.append(o);}
+      if(c===1){
+        const pb=document.createElement('div'),b=document.createElement('b');
+        pb.className='kp'+(k.p==null?' ind':'');
+        if(k.p!=null)b.style.width=Math.round(k.p*100)+'%';
+        pb.append(b);el.append(pb);
+      }
+      col.append(el);
+    });
+    kb.append(col);
+  });
+}
+function sync(){
+  const items=board(),now=Date.now();
+  AG.forEach(a=>{a._tp=null;});
+  items.filter(k=>k.col===1&&k.owner).forEach(k=>{const a=byId(k.owner);if(a)a._tp=k.p!=null?k.p:((now/2500)%1);});
+  const n=$('#tkn');if(n)n.textContent=items.filter(k=>k.col<2).length;
+  const dlg=$('#gtk');if(dlg&&!dlg.hidden)paintKB(items);
+}
+
+/* 3. RAPAT: agen berkumpul di ruang rapat, berdiskusi lewat Gemini, lalu menulis notulen */
+let mt=null;
+const noSkill=s=>String(s||'').replace(/^\s*\[SKILL:[^\]\n]*(\]\s*|$)/i,'').trim();
+async function ask(a,q,sig){
+  let err=null;
+  for(const m of GFALL){
+    try{const o=await gOnce(a,q,false,sig,m),t=noSkill(o.text);if(t)return t;}
+    catch(e){if(e&&e.name==='AbortError')throw e;err=e;}
+  }
+  throw err||new Error('Jawaban kosong.');
+}
+async function rapat(topic){
+  if(mt){sys('Rapat sedang berlangsung. Ketik /rapat stop untuk menghentikan.','hint');return;}
+  if(!GM.key){sys('Hubungkan Gemini dulu (tombol GEMINI) agar agen bisa berdiskusi.','hint');return;}
+  const ag=AIS.slice(0,5),ac=new AbortController(),room=CMD_ROOMS.find(r=>r.key==='rapat');
+  mt={ac};
+  try{issueCmd({tg:ag,room,act:null,coffee:false,dur:20*60000,forever:false,raw:'/rapat'},Date.now());}catch(e){}
+  const bye=ms=>setTimeout(()=>{try{releaseCmd(ag,Date.now());}catch(e){}},ms);
+  sys('Rapat dimulai dengan topik: "'+topic+'". '+ag.map(a=>a.name).join(', ')+' menuju ruang rapat. Perintah /rapat stop untuk menghentikan.');
+  const tr=[],turns=ag.map(a=>({a,second:false})).concat([{a:ag[0],second:true},{a:ag[1]||ag[0],second:true}]);
+  try{
+    await sleep(6000,ac.signal);
+    for(const u of turns){
+      const prev=tr.length?'Pembicaraan sejauh ini:\n'+tr.map(x=>x.n+': '+x.t).join('\n')+'\n\n':'';
+      const q='Kamu sedang rapat tim di ruang rapat. Topik: "'+topic+'".\n'+prev+(u.second?'Tanggapi pendapat sebelumnya: setuju atau bantah dengan alasan, lalu tutup dengan satu usulan konkret.':'Sampaikan pendapat atau usulan dari sudut pandang perananmu.')+' Maksimal 2 kalimat pendek, Bahasa Indonesia, tanpa markdown.';
+      u.a.bubble={text:'Berpikir…',ttl:3};
+      const t=await ask(u.a,q,ac.signal).then(s=>s.replace(/[*_#`]/g,'').slice(0,400));
+      tr.push({n:u.a.name,t});
+      addMsg(u.a,t,'',Date.now(),false);
+      u.a.bubble={text:t.length>34?t.slice(0,32)+'…':t,ttl:6};
+      await sleep(1200,ac.signal);
+    }
+    const lead=ag[0];lead.bubble={text:'Menulis notulen…',ttl:3};
+    const sm=await ask(lead,'Tulis notulen rapat dalam markdown berdasarkan diskusi ini.\nTopik: '+topic+'\n\n'+tr.map(x=>x.n+': '+x.t).join('\n')+'\n\nFormat persis:\n## Ringkasan\n(2-3 kalimat)\n## Keputusan\n- ...\n## Tindak lanjut\n- NamaAgen: tugas konkret dalam satu baris\nHanya pakai nama dari daftar ini untuk penanggung jawab: '+ag.map(a=>a.name).join(', ')+'.',ac.signal);
+    const t0=Date.now(),md='# Notulen Rapat: '+topic+'\n\n'+sm+'\n\n## Jalannya diskusi\n'+tr.map(x=>'- **'+x.n+':** '+x.t).join('\n');
+    const rec={id:'r'+t0,t:t0,agent:lead.id,prompt:'Rapat: '+topic,text:md,task:false};
+    results.push(rec);rSave();gCount();
+    const r=addMsg(lead,'Rapat selesai. Notulen sudah masuk ke tombol HASIL.','',t0,true);
+    const acts=document.createElement('div');acts.className='acts';r.body.append(acts);
+    acts.append(mini('Lihat notulen',()=>openRes(rec),1));
+    const sec=(sm.split(/##\s*Tindak lanjut/i)[1]||''),it=[];
+    for(const m of sec.matchAll(/^\s*[-*]\s*\**([^:\n*]{2,24})\**:\s*(.+)$/gm)){
+      const a=ag.find(x=>x.name.toLowerCase()===m[1].trim().toLowerCase());
+      if(a)it.push({a,d:m[2].replace(/[*_`]/g,'').trim().slice(0,240)});
+    }
+    if(it.length)acts.append(mini('Kerjakan tindak lanjut ('+it.length+')',function(){
+      this.disabled=true;
+      it.forEach((x,i)=>setTimeout(()=>{
+        const title='📋 '+x.d,ut={t:Date.now(),text:title.slice(0,40),st:0,ap:'ok',at:Date.now()};
+        utasks.push(ut);save();refreshTasks(Date.now());
+        gemRun(x.a,x.d,true,ut,undefined,{title});
+      },i*2500));
+      sys('Tindak lanjut dikerjakan. Pantau di papan TUGAS.');
+    }));
+    bye(8000);
+  }catch(e){
+    bye(0);
+    if(e&&e.name==='AbortError')sys('Rapat dihentikan.');
+    else sys('Rapat berhenti: '+((e&&e.message)||'terjadi kesalahan')+'. Coba lagi sebentar.','hint');
+  }finally{mt=null;}
+}
+
+function cmd(txt){
+  let m;
+  if(/^\/help$/i.test(txt)){setTimeout(()=>sys('Fitur baru:\n/sholat (jadwal hari ini) | /sholat demo\n/rapat <topik> (agen berdiskusi lewat Gemini lalu menulis notulen) | /rapat stop\nTombol TUGAS membuka papan Kanban.'),90);return false;}
+  if(/^\/sholat$/i.test(txt)){jadwal();return true;}
+  if(/^\/sholat\s+demo$/i.test(txt)){demoP();return true;}
+  if(m=txt.match(/^\/rapat(?:\s+(.+))?$/i)){
+    const a=(m[1]||'').trim();
+    if(/^stop$/i.test(a)){if(mt)mt.ac.abort();else sys('Tidak ada rapat yang berlangsung.','hint');}
+    else if(!a)sys('Pakai: /rapat <topik>, contoh: /rapat strategi konten bulan depan','hint');
+    else rapat(a.slice(0,200));
+    return true;
+  }
+  return false;
+}
+
+$('#sholat').addEventListener('click',jadwal);
+$('#tkbtn').addEventListener('click',()=>{paintKB(board());$('#gtk').hidden=false;});
+tick();sync();
+setInterval(tick,15000);setInterval(sync,1000);setInterval(loadPT,30000);setTimeout(loadPT,4000);
+return {cmd,jadwal};
 })();
 
 /* ---------- ukuran & loop ---------- */
