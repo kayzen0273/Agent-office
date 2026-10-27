@@ -4332,6 +4332,7 @@ async function gemRun(a,prompt,task,ut,mode,meta){
  r.tx.classList.add('ai','wait');
  const acts=document.createElement('div');acts.className='acts';r.body.append(acts);
  const ac=new AbortController();
+ if(ut)Object.defineProperty(ut,'_ac',{value:ac,configurable:true,writable:true});
  acts.append(mini('Hentikan',()=>ac.abort()));
  let streaming=false,cur='',raf=0;
  const keep=()=>{if(a.bubble&&/^Mencoba/.test(a.bubble.text))return;a.bubble={text:img?'Membuat gambar…':streaming?'Menulis…':'Berpikir…',ttl:1.4};};
@@ -4365,6 +4366,7 @@ async function gemRun(a,prompt,task,ut,mode,meta){
   return text;
  }catch(e){
   if(raf)cancelAnimationFrame(raf);
+  if(e&&e.name==='AbortError'&&ut){const ui=utasks.indexOf(ut);if(ui>=0)utasks.splice(ui,1);}
   tkSet(0,null);
   acts.replaceChildren();
   r.tx.className='tx hint';
@@ -5513,7 +5515,7 @@ const WK='agentOffice.world.v1',H=EVT.H;
 let C={city:'Jakarta',lat:-6.2,lon:106.82,sched:[],scores:[],rep:{on:true,time:'17:30',last:''}};
 try{Object.assign(C,JSON.parse(localStorage.getItem(WK)||'{}'));}catch(e){}
 const sv=()=>{window.PLOC={lat:C.lat,lon:C.lon,city:C.city};try{localStorage.setItem(WK,JSON.stringify(C));}catch(e){}};window.PLOC={lat:C.lat,lon:C.lon,city:C.city};
-if(!C.seeded){C.seeded=1;C.sched.push({id:'s-bawaan',time:'09:00',agent:'yukina',prompt:'Susun ide konten hari ini: 5 ide posting lengkap dengan hook, caption singkat, dan hashtag.',on:true,last:''});sv();}
+if(C.sched.some(x=>x.id==='s-bawaan')){C.sched=C.sched.filter(x=>x.id!=='s-bawaan');sv();}
 const say=(t,k)=>addMsg(boss,t,k||'sys',Date.now(),false);
 const day=()=>{const d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();};
 const hm=()=>{const n=new Date();return String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');};
@@ -5738,7 +5740,7 @@ function board(){
   return tasks.map(k=>{
     const s=sim[k.id];let p=null;
     if(k.col===1&&s)p=Math.max(.05,Math.min(.97,(now-s.pickAt)/(s.doneAt-s.pickAt)));
-    return {id:k.id,text:k.text,col:k.col,owner:k.owner,p};
+    return {id:k.id,text:k.text,col:k.col,owner:k.owner,p,ut:LIVE()?utasks.find(u=>'u'+u.t===k.id):null};
   });
 }
 function paintKB(items){
@@ -5755,6 +5757,7 @@ function paintKB(items){
       const tx=document.createElement('div');tx.textContent=k.text;el.append(tx);
       const a=k.owner&&byId(k.owner);
       if(a){const o=document.createElement('div'),i=document.createElement('i');o.className='o';i.style.background=a.color;o.append(i,document.createTextNode(a.name));el.append(o);}
+      if(k.ut&&c<2){const w=document.createElement('div');w.style.marginTop='6px';w.append(mini(c===1?'Hentikan':'Batalkan',()=>stopT(k.ut)));el.append(w);}
       if(c===1){
         const pb=document.createElement('div'),b=document.createElement('b');
         pb.className='kp'+(k.p==null?' ind':'');
@@ -5765,6 +5768,12 @@ function paintKB(items){
     });
     kb.append(col);
   });
+}
+function stopT(ut){
+  if(ut._ac)try{ut._ac.abort();}catch(e){}
+  const i=utasks.indexOf(ut);if(i>=0)utasks.splice(i,1);
+  save();refreshTasks(Date.now());sync();
+  sys('Tugas dihentikan: '+ut.text);
 }
 function sync(){
   const items=board(),now=Date.now();
