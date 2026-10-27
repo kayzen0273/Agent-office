@@ -248,6 +248,7 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
    <span class="brand">Agent Office</span>
    <button class="chip" id="adzanbtn" type="button" title="Pilih file audio adzan dari perangkat">ADZAN</button><input type="file" id="adzanfile" accept="audio/*" hidden><button class="chip" id="sholat" type="button" title="Demo waktu sholat">SHOLAT</button>
    <button class="chip" id="mpbtn" type="button" title="Mode tamu: masuk kantor bersama pengguna lain"><i id="mpdot" style="background:#5c6272"></i>TAMU</button>
+   <button class="chip" id="rtbtn" type="button" title="Edit tugas rutin harian">RUTIN</button>
    <button class="chip" id="tkbtn" type="button" title="Papan tugas: antri, dikerjakan, selesai">TUGAS <b id="tkn">0</b></button>
    <button class="chip" id="evbtn" type="button" title="Picu kejadian acak: pizza datang, listrik padam, atau tamu penting">KEJADIAN</button><button class="chip" id="mode" type="button" aria-label="Mode waktu">AUTO</button>
    <span class="chip"><i id="pdot"></i><span id="plabel">DAWN</span></span>
@@ -380,7 +381,19 @@ textarea:focus-visible{outline:2px solid #6aa8ff;outline-offset:2px}
 @keyframes kind{from{transform:translateX(-100%)}to{transform:translateX(300%)}}
 @media(prefers-reduced-motion:reduce){.kp.ind b{animation:none}}
 .ke{color:var(--dim);font-size:11px;padding:6px 2px}
+.rr{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px}
+.rr .rh{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:6px}
+.rr .sp{flex:1}
+.rr input[type=time],.rr select,.rr textarea{background:#0f1116;border:1px solid var(--line);border-radius:6px;color:var(--text);padding:5px 7px;font:inherit;font-size:12px}
+.rr textarea{width:100%;box-sizing:border-box;resize:vertical}
+.rr input[type=checkbox]{width:16px;height:16px}
 </style>
+<div class="ov" id="grt" hidden>
+ <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="rtt">
+  <div class="dh"><h2 id="rtt">Tugas rutin</h2><button class="mini" type="button" data-x>Tutup</button></div>
+  <div class="db"><p class="note">Dikerjakan tiap hari saat halaman ini terbuka. Perubahan tersimpan otomatis.</p><div id="rtl"></div><button class="mini pri" id="rtadd" type="button">+ Tambah tugas rutin</button></div>
+ </div>
+</div>
 <div class="ov" id="gtk" hidden>
  <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="tkt">
   <div class="dh"><h2 id="tkt">Papan tugas</h2><button class="mini" type="button" data-x>Tutup</button></div>
@@ -5635,11 +5648,17 @@ function cmd(txt){
   }
   if(m=txt.match(/^\/jadwal(?:\s+(.+))?$/i)){
     const a=(m[1]||'').trim();let x;
-    if(!a)say('Tugas rutin (jalan saat halaman ini terbuka, susul bila terlewat di hari yang sama):\n'+sList());
+    if(!a)say('Tugas rutin (jalan saat halaman ini terbuka, susul bila terlewat di hari yang sama). Edit lewat tombol RUTIN atau /jadwal ubah 1 jam 08:00:\n'+sList());
     else if(x=a.match(/^(?:tambah|add)\s+(\S+)\s+(\S+)\s+(.+)$/i)){
       const t=normT(x[1]),ag=findAg(x[2]);
       if(!t)say('Format jam: 09:00','hint');else if(!ag)say('Agen tidak dikenal. Pilih: '+AIS.map(q=>q.id).join(', ')+'.','hint');
       else{C.sched.push({id:'s'+Date.now(),time:t,agent:ag.id,prompt:x[3].slice(0,300),on:true,last:hm()>=t?day():''});sv();say('Jadwal ditambah: tiap hari '+t+', '+ag.name+': '+x[3]+(hm()>=t?'\nJam itu sudah lewat, mulai besok. Ketik /jadwal jalan '+C.sched.length+' untuk menjalankannya sekarang.':''));}
+    }else if(x=a.match(/^(?:ubah|edit)\s+(\d+)\s+(jam|agen|tugas)\s+(.+)$/i)){
+      const s=C.sched[+x[1]-1],k=x[2].toLowerCase();
+      if(!s)say('Nomor jadwal tidak ada.','hint');
+      else if(k==='jam'){const t=normT(x[3].trim());if(!t)say('Format jam: 09:00','hint');else{s.time=t;s.last=hm()>=t?day():'';sv();say('Jadwal '+x[1]+' diubah ke jam '+t+'.'+(hm()>=t?' Jam itu sudah lewat, mulai besok.':''));}}
+      else if(k==='agen'){const ag=findAg(x[3].trim());if(!ag)say('Agen tidak dikenal. Pilih: '+AIS.map(q=>q.id).join(', ')+'.','hint');else{s.agent=ag.id;sv();say('Jadwal '+x[1]+' sekarang dikerjakan '+ag.name+'.');}}
+      else{s.prompt=x[3].slice(0,300);sv();say('Isi tugas jadwal '+x[1]+' diubah.');}
     }else if(x=a.match(/^(hapus|jalan|on|off)\s+(\d+)$/i)){
       const s=C.sched[+x[2]-1],k=x[1].toLowerCase();
       if(!s)say('Nomor jadwal tidak ada.','hint');
@@ -5655,7 +5674,7 @@ function cmd(txt){
 EVT.hook((t,s)=>{if(MPo)MPo.ev(t,s);if(SYNCo)SYNCo.ev(t,s);});
 {let wp=false;setInterval(()=>{const p=!!prayerAt(Date.now());if(p&&!wp&&MPo)MPo.pray();if(!p&&wp&&MPo)MPo.unpray();wp=p;},2000);}
 setTimeout(()=>locate().then(load),3000);setInterval(load,15*60000);setTimeout(chk,5000);setInterval(chk,30000);
-return {cmd,sky,score:(id,s)=>{(C.scores=C.scores||[]).push({t:Date.now(),id,s});C.scores=C.scores.slice(-200);sv();}};
+return {cmd,sky,ed:{list:()=>C.sched,sv,run:runS},score:(id,s)=>{(C.scores=C.scores||[]).push({t:Date.now(),id,s});C.scores=C.scores.slice(-200);sv();}};
 })();
 
 /* ---------- FITUR BARU: jadwal sholat real (API), papan tugas Kanban, rapat antar-agen ---------- */
@@ -5819,7 +5838,8 @@ async function rapat(topic){
 
 function cmd(txt){
   let m;
-  if(/^\/help$/i.test(txt)){setTimeout(()=>sys('Fitur baru:\n/sholat (jadwal hari ini) | /sholat demo\n/rapat <topik> (agen berdiskusi lewat Gemini lalu menulis notulen) | /rapat stop\nTombol TUGAS membuka papan Kanban.'),90);return false;}
+  if(/^\/help$/i.test(txt)){setTimeout(()=>sys('Fitur baru:\n/sholat (jadwal hari ini) | /sholat demo\n/rapat <topik> (agen berdiskusi lewat Gemini lalu menulis notulen) | /rapat stop\nTombol TUGAS membuka papan Kanban.\nTombol RUTIN atau /jadwal edit membuka editor tugas rutin; /jadwal ubah 1 jam 08:00 | agen yukina | tugas <isi baru>.'),90);return false;}
+  if(/^\/jadwal\s+(?:edit|ubah)$/i.test(txt)){openRT();return true;}
   if(/^\/sholat$/i.test(txt)){jadwal();return true;}
   if(/^\/sholat\s+demo$/i.test(txt)){demoP();return true;}
   if(m=txt.match(/^\/rapat(?:\s+(.+))?$/i)){
@@ -5832,6 +5852,31 @@ function cmd(txt){
   return false;
 }
 
+const dayS=()=>{const d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();};
+const hmS=()=>{const n=new Date();return p2(n.getHours())+':'+p2(n.getMinutes());};
+function paintRT(){
+  const box=$('#rtl'),L=WLD.ed.list();box.replaceChildren();
+  if(!L.length){const e=document.createElement('div');e.className='ke';e.textContent='Belum ada tugas rutin.';box.append(e);}
+  L.forEach((s,i)=>{
+    const row=document.createElement('div'),hd=document.createElement('div'),sp=document.createElement('span');
+    row.className='rr';hd.className='rh';sp.className='sp';
+    const on=document.createElement('input');on.type='checkbox';on.checked=!!s.on;on.title='Aktif';on.setAttribute('aria-label','Aktif');
+    const tm=document.createElement('input');tm.type='time';tm.value=s.time;tm.setAttribute('aria-label','Jam');
+    const ag=document.createElement('select');ag.setAttribute('aria-label','Agen');
+    AIS.forEach(a=>{const o=document.createElement('option');o.value=a.id;o.textContent=a.name;ag.append(o);});ag.value=s.agent;
+    const pr=document.createElement('textarea');pr.rows=2;pr.maxLength=300;pr.value=s.prompt;pr.setAttribute('aria-label','Isi tugas');
+    on.onchange=()=>{s.on=on.checked;WLD.ed.sv();};
+    tm.onchange=()=>{if(!tm.value){tm.value=s.time;return;}s.time=tm.value;s.last=hmS()>=s.time?dayS():'';WLD.ed.sv();};
+    ag.onchange=()=>{s.agent=ag.value;WLD.ed.sv();};
+    pr.onchange=()=>{const v=pr.value.trim().slice(0,300);if(!v){pr.value=s.prompt;return;}s.prompt=v;WLD.ed.sv();};
+    const go=mini('Jalankan',()=>{if(!GM.key)sys('Hubungkan Gemini dulu agar tugas bisa dikerjakan.','hint');else{$('#grt').hidden=true;WLD.ed.run(s);}});
+    const del=mini('Hapus',()=>{L.splice(i,1);WLD.ed.sv();paintRT();});
+    hd.append(on,tm,ag,sp,go,del);row.append(hd,pr);box.append(row);
+  });
+}
+const openRT=()=>{paintRT();$('#grt').hidden=false;};
+$('#rtbtn').addEventListener('click',openRT);
+$('#rtadd').addEventListener('click',()=>{WLD.ed.list().push({id:'s'+Date.now(),time:'09:00',agent:AIS[0].id,prompt:'Tulis tugas di sini',on:false,last:dayS()});WLD.ed.sv();paintRT();});
 $('#sholat').addEventListener('click',jadwal);
 $('#tkbtn').addEventListener('click',()=>{paintKB(board());$('#gtk').hidden=false;});
 tick();sync();
